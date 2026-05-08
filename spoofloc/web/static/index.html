@@ -1,0 +1,1760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>spoofloc</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [x-cloak] { display: none !important; }
+
+    :root {
+      --bg: #0b0d13;
+      --surface: #101318;
+      --surface2: #181c25;
+      --surface3: #1d2230;
+      --border: #1c2030;
+      --border-mid: #242a3a;
+      --border-strong: #2a3148;
+      --accent: #4d87f5;
+      --accent-soft: rgba(77,135,245,.1);
+      --accent-dim: #2d5cbf;
+      --green: #2ecfaa;
+      --green-soft: rgba(46,207,170,.08);
+      --red: #e05555;
+      --red-soft: rgba(224,85,85,.08);
+      --yellow: #d4933a;
+      --text: #edf4ff;
+      --text-muted: #94aeca;
+      --text-dim: #637d9a;
+      --mono: 'IBM Plex Mono', monospace;
+      --sidebar-w: 300px;
+      --header-h: 44px;
+      --r: 2px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--mono);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Grain overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.022;
+      pointer-events: none;
+      z-index: 9999;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    /* ── Header ── */
+    header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 14px;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+
+    .logo {
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: var(--text);
+    }
+
+    .hdr-sep { width: 1px; height: 14px; background: var(--border-strong); }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green { background: var(--green); box-shadow: 0 0 5px var(--green); }
+    .dot-red   { background: var(--red); }
+    .dot-yellow { background: var(--yellow); animation: blink 1.4s ease-in-out infinite; }
+    @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:.25 } }
+
+    .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+    .coords-display {
+      font-size: 10px;
+      font-weight: 300;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+    }
+    .coords-display.has-coords { color: var(--text); }
+
+    /* ── Body ── */
+    .body { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    aside {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+      animation: slideIn .2s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-4px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    aside::-webkit-scrollbar { width: 3px; }
+    aside::-webkit-scrollbar-track { background: transparent; }
+    aside::-webkit-scrollbar-thumb { background: var(--border-strong); }
+
+    .section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sec-label {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* ── Mode tabs ── */
+    .tabs-wrap {
+      display: flex;
+      border-bottom: 1px solid var(--border-mid);
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 11px 0;
+      text-align: center;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+    }
+    .mode-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .mode-tab:hover:not(.active) { color: var(--text); }
+
+    /* ── Inputs ── */
+    .search-row { display: flex; gap: 6px; }
+
+    input[type="text"], input[type="number"] {
+      background: var(--surface2);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: var(--r);
+      padding: 7px 9px;
+      font-size: 11px;
+      font-family: var(--mono);
+      width: 100%;
+      outline: none;
+      transition: border-color .12s, background .12s;
+    }
+    input:focus { border-color: var(--accent); background: var(--surface3); }
+    input::placeholder { color: var(--text-dim); }
+
+    /* ── Buttons ── */
+    button {
+      border: none;
+      cursor: pointer;
+      border-radius: var(--r);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 7px 12px;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-dim); }
+    .btn-primary:disabled { opacity: .3; cursor: default; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border-strong);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+    .btn-ghost:disabled { opacity: .3; cursor: default; }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--red);
+      border: 1px solid rgba(224,85,85,.25);
+    }
+    .btn-danger:hover { background: var(--red-soft); border-color: var(--red); }
+
+    .btn-green {
+      background: transparent;
+      color: var(--green);
+      border: 1px solid rgba(46,207,170,.25);
+    }
+    .btn-green:hover { background: var(--green-soft); border-color: var(--green); }
+    .btn-green:disabled { opacity: .3; cursor: default; }
+
+    .btn-full { width: 100%; display: block; text-align: center; }
+    .btn-row { display: flex; gap: 6px; }
+    .mt6 { margin-top: 6px; }
+    .mt8 { margin-top: 8px; }
+    .mt10 { margin-top: 10px; }
+
+    /* ── Coord inputs ── */
+    .coord-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    label {
+      font-size: 10px;
+      letter-spacing: 0.02em;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    /* ── Waypoints ── */
+    .waypoint-list { max-height: 120px; overflow-y: auto; margin-top: 8px; }
+    .waypoint-list::-webkit-scrollbar { width: 2px; }
+    .waypoint-list::-webkit-scrollbar-thumb { background: var(--border-strong); }
+
+    .waypoint-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .waypoint-item:last-child { border-bottom: none; }
+    .wp-num { color: var(--text-dim); width: 16px; flex-shrink: 0; font-size: 9px; }
+    .wp-coords { flex: 1; color: var(--text-muted); letter-spacing: 0.03em; }
+    .wp-del { color: var(--text-dim); cursor: pointer; font-size: 14px; line-height: 1; transition: color .1s; }
+    .wp-del:hover { color: var(--red); }
+
+    /* ── Progress ── */
+    .progress-bar {
+      height: 2px;
+      background: var(--surface3);
+      border-radius: 1px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width .4s ease;
+    }
+    .progress-meta {
+      margin-top: 6px;
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Speed ── */
+    .speed-row { display: flex; align-items: center; gap: 10px; }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      background: transparent;
+      cursor: pointer;
+    }
+    .speed-val {
+      font-size: 11px;
+      color: var(--accent);
+      width: 58px;
+      text-align: right;
+      letter-spacing: 0.03em;
+      flex-shrink: 0;
+    }
+
+    /* ── Checkbox ── */
+    .check-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    input[type="checkbox"] { accent-color: var(--accent); width: 12px; height: 12px; cursor: pointer; flex-shrink: 0; }
+    .check-label { font-size: 11px; color: var(--text-muted); cursor: pointer; }
+
+    /* ── Messages ── */
+    .msg {
+      font-size: 10px;
+      padding: 6px 8px;
+      border-radius: var(--r);
+      margin-top: 8px;
+      letter-spacing: 0.03em;
+      line-height: 1.5;
+      border-left: 2px solid;
+    }
+    .msg-error { background: var(--red-soft); color: var(--red); border-color: var(--red); }
+    .msg-ok    { background: var(--green-soft); color: var(--green); border-color: var(--green); }
+
+    /* ── Hint ── */
+    .hint { font-size: 10px; color: var(--text-dim); line-height: 1.8; letter-spacing: 0.03em; }
+
+    /* ── Map ── */
+    .map-shell { flex: 1; position: relative; min-width: 0; background: var(--surface2); }
+    #map { position: absolute; inset: 0; }
+
+    /* ── Location pin ── */
+    .location-pin {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid rgba(255,255,255,.9);
+      box-shadow: 0 0 0 3px rgba(77,135,245,.2), 0 2px 8px rgba(0,0,0,.5);
+      pointer-events: none;
+    }
+
+    /* ── Waypoint markers ── */
+    .waypoint-marker {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 1.5px solid var(--accent);
+      color: var(--accent);
+      font-size: 9px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      cursor: pointer;
+    }
+
+    /* ── MapLibre overrides ── */
+    .maplibregl-ctrl-group {
+      background: var(--surface) !important;
+      border: 1px solid var(--border-strong) !important;
+      box-shadow: none !important;
+      border-radius: var(--r) !important;
+    }
+    .maplibregl-ctrl-group button {
+      background-color: var(--surface) !important;
+      border-radius: 0 !important;
+      padding: 0 !important;
+    }
+    .maplibregl-ctrl-group button:hover { background: var(--surface2) !important; }
+    .maplibregl-ctrl-icon { filter: invert(0.75); }
+    .maplibregl-ctrl-attrib { display: none; }
+
+    /* ── Suggestions ── */
+    .search-container { position: relative; }
+    .suggestions-dropdown {
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border-strong);
+      border-top: none;
+      border-radius: 0 0 var(--r) var(--r);
+      z-index: 100;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .suggestion-item {
+      padding: 8px 10px;
+      font-size: 10px;
+      cursor: pointer;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-bottom: 1px solid var(--border);
+      transition: background .1s, color .1s;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: var(--surface3); color: var(--text); }
+
+    /* ── Map overlay ── */
+    .map-overlay {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px;
+      background: rgba(11,13,19,.88);
+      text-align: center;
+      z-index: 10;
+      padding: 24px;
+    }
+    .map-overlay strong {
+      font-size: 11px;
+      color: var(--text);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+    .map-overlay span { font-size: 10px; color: var(--text-muted); max-width: 360px; line-height: 1.8; }
+
+    /* ── Plan route items ── */
+    .plan-route-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: var(--r);
+      border: 1px solid var(--border-strong);
+      cursor: pointer;
+      margin-bottom: 5px;
+      transition: border-color .12s, background .12s;
+    }
+    .plan-route-item:hover { border-color: var(--accent); }
+    .plan-route-item.selected { border-color: var(--accent); background: var(--accent-soft); }
+    .plan-route-badge {
+      width: 18px; height: 18px; border-radius: 50%;
+      color: #fff; font-size: 9px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .plan-route-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .plan-route-label { font-size: 11px; font-weight: 500; letter-spacing: 0.04em; }
+    .plan-route-meta { font-size: 10px; color: var(--text-muted); }
+    .plan-route-check { color: var(--accent); font-size: 11px; }
+
+    .ab-label {
+      font-size: 9px; font-weight: 600;
+      padding: 1px 5px; border-radius: 2px;
+      letter-spacing: 0.02em;
+    }
+    .ab-a { background: rgba(46,207,170,.12); color: var(--green); }
+    .ab-b { background: rgba(224,85,85,.12); color: var(--red); }
+
+    /* Motion pattern selector */
+    .pattern-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+    .pattern-tab {
+      flex: 1; min-width: 0;
+      padding: 6px 4px;
+      text-align: center;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r);
+      background: transparent;
+      transition: color .12s, border-color .12s, background .12s;
+    }
+    .pattern-tab:hover { color: var(--text); border-color: var(--accent); }
+    .pattern-tab.active { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+
+    .coord-pair { font-size: 10px; color: var(--text-muted); margin-top: 4px; letter-spacing: 0.03em; }
+    .coord-pair.set { color: var(--text); }
+  </style>
+</head>
+<body>
+<div id="app" x-data="app()" x-init="init()">
+
+  <header>
+    <span class="logo">Spoofloc</span>
+    <div class="hdr-sep"></div>
+
+    <div class="status-pill">
+      <span class="dot" :class="tunnelDotClass()"></span>
+      <span x-text="tunnelLabel()"></span>
+    </div>
+
+    <div class="hdr-right">
+      <div class="status-pill" x-show="spoofActive">
+        <span class="dot dot-green"></span>
+        <span>Spoofing</span>
+      </div>
+
+      <div class="status-pill" x-show="routeRunning">
+        <span class="dot dot-yellow"></span>
+        <span x-text="'Route · ' + (routeProgress.speed_mph?.toFixed(0) ?? '–') + ' mph'"></span>
+      </div>
+
+      <div class="status-pill" x-show="motionRunning">
+        <span class="dot dot-yellow"></span>
+        <span x-text="'Motion · ' + (motionState?.pattern ?? '…')"></span>
+      </div>
+
+      <span class="coords-display" :class="currentLat !== null ? 'has-coords' : ''" x-show="currentLat !== null">
+        <span x-text="currentLat?.toFixed(5)"></span>&thinsp;<span x-text="currentLng?.toFixed(5)"></span>
+      </span>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside>
+
+      <div class="tabs-wrap">
+        <div class="mode-tab" :class="{active: mode==='location'}" @click="setMode('location')">Loc</div>
+        <div class="mode-tab" :class="{active: mode==='route'}"    @click="setMode('route')">Route</div>
+        <div class="mode-tab" :class="{active: mode==='plan'}"     @click="setMode('plan')">Plan</div>
+        <div class="mode-tab" :class="{active: mode==='motion'}"   @click="setMode('motion')">Motion</div>
+      </div>
+
+      <!-- ══ LOCATION MODE ══ -->
+      <template x-if="mode === 'location'">
+        <div>
+          <div class="section">
+            <div class="sec-label">Search</div>
+            <div class="search-container" @click.outside="showSuggestions = false">
+              <div class="search-row">
+                <input
+                  type="text"
+                  placeholder="City, address, landmark…"
+                  x-model="searchQuery"
+                  @input="onSearchInput()"
+                  @keydown.enter="showSuggestions = false; searchAddress()"
+                  @keydown.escape="showSuggestions = false; suggestions = []"
+                  @focus="showSuggestions = suggestions.length > 0"
+                  autocomplete="off"
+                />
+                <button class="btn-primary" @click="searchAddress()" :disabled="searching" style="flex-shrink:0">
+                  <span x-show="!searching">Go</span>
+                  <span x-show="searching">…</span>
+                </button>
+              </div>
+              <div class="suggestions-dropdown" x-show="showSuggestions && suggestions.length > 0">
+                <template x-for="(s, i) in suggestions" :key="i">
+                  <div class="suggestion-item" @mousedown.prevent @click="selectSuggestion(s)" x-text="s.display_name"></div>
+                </template>
+              </div>
+            </div>
+            <div class="msg msg-error" x-show="searchError" x-text="searchError"></div>
+          </div>
+
+          <div class="section">
+            <div class="sec-label">Coordinates</div>
+            <div class="coord-row">
+              <div>
+                <label>Lat</label>
+                <input type="number" step="any" placeholder="37.7749" x-model.number="inputLat" />
+              </div>
+              <div>
+                <label>Lng</label>
+                <input type="number" step="any" placeholder="-122.4194" x-model.number="inputLng" />
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <button class="btn-primary btn-full" @click="setLocation()" :disabled="inputLat===null || inputLng===null || settingLoc">
+              <span x-show="!settingLoc">Set Location</span>
+              <span x-show="settingLoc">Setting…</span>
+            </button>
+            <div class="mt6">
+              <button class="btn-ghost btn-full" @click="clearLocation()" :disabled="!spoofActive">Clear Spoof</button>
+            </div>
+            <div class="msg msg-error" x-show="locError" x-text="locError"></div>
+            <div class="msg msg-ok"    x-show="locOk"    x-text="locOk"></div>
+          </div>
+
+          <div class="section">
+            <div class="hint">Click the map to set location instantly.</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ══ ROUTE MODE ══ -->
+      <template x-if="mode === 'route'">
+        <div>
+          <div class="section">
+            <div class="sec-label">
+              <span>Waypoints</span>
+              <span x-text="waypoints.length + ' pts'"></span>
+            </div>
+            <div class="waypoint-list">
+              <template x-for="(wp, i) in waypoints" :key="i">
+                <div class="waypoint-item">
+                  <span class="wp-num" x-text="i+1"></span>
+                  <span class="wp-coords" x-text="wp[0].toFixed(4) + ', ' + wp[1].toFixed(4)"></span>
+                  <span class="wp-del" @click="removeWaypoint(i)">×</span>
+                </div>
+              </template>
+              <div class="hint" x-show="waypoints.length === 0" style="padding:4px 0">Click map to add waypoints</div>
+            </div>
+            <div class="mt8">
+              <button class="btn-ghost btn-full" @click="clearWaypoints()" :disabled="waypoints.length===0">Clear All</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="sec-label">Speed</div>
+            <div class="speed-row">
+              <input type="range" min="1" max="120" step="1" x-model.number="routeSpeed" />
+              <span class="speed-val" x-text="routeSpeed + ' mph'"></span>
+            </div>
+            <div class="check-row">
+              <input type="checkbox" id="loopCheck" x-model="routeLoop" />
+              <label for="loopCheck" class="check-label">Loop route</label>
+            </div>
+          </div>
+
+          <div class="section" x-show="routeRunning">
+            <div class="sec-label">Progress</div>
+            <div class="progress-bar">
+              <div class="progress-fill" :style="'width:' + routeProgressPct() + '%'"></div>
+            </div>
+            <div class="progress-meta">
+              Segment <span x-text="(routeProgress.segment_index||0)+1"></span> /
+              <span x-text="Math.max(routeProgress.total_waypoints||0,1)-1"></span>
+            </div>
+          </div>
+
+          <div class="section">
+            <button class="btn-green btn-full" @click="startRoute()" :disabled="waypoints.length < 2 || routeRunning">
+              ▶ Play Route
+            </button>
+            <div class="btn-row mt6" x-show="routeRunning">
+              <button class="btn-ghost" style="flex:1" @click="pauseRoute()"  x-show="!routePaused">⏸ Pause</button>
+              <button class="btn-ghost" style="flex:1" @click="resumeRoute()" x-show="routePaused">▶ Resume</button>
+              <button class="btn-danger" style="flex:1" @click="stopRoute()">■ Stop</button>
+            </div>
+            <div class="msg msg-error" x-show="routeError" x-text="routeError"></div>
+          </div>
+
+          <div class="section">
+            <div class="hint">Click map to add waypoints in order.<br>Use list above to remove pins.</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ══ PLAN MODE ══ -->
+      <template x-if="mode === 'plan'">
+        <div>
+          <div class="section">
+            <div class="sec-label">Origin <span class="ab-label ab-a">A</span></div>
+            <div class="search-container" @click.outside="planOriginSuggestions = []">
+              <input
+                type="text"
+                placeholder="Address or click map"
+                x-model="planOrigin"
+                @input="onPlanOriginInput()"
+                @keydown.enter="planOriginSuggestions = []; planOriginFromText()"
+                @keydown.escape="planOriginSuggestions = []"
+                autocomplete="off"
+              />
+              <div class="suggestions-dropdown" x-show="planOriginSuggestions.length > 0">
+                <template x-for="(s, i) in planOriginSuggestions" :key="i">
+                  <div class="suggestion-item" @mousedown.prevent @click="selectPlanOrigin(s)" x-text="s.display_name"></div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="sec-label">Destination <span class="ab-label ab-b">B</span></div>
+            <div class="search-container" @click.outside="planDestSuggestions = []">
+              <input
+                type="text"
+                placeholder="Address or click map"
+                x-model="planDest"
+                @input="onPlanDestInput()"
+                @keydown.enter="planDestSuggestions = []; planDestFromText()"
+                @keydown.escape="planDestSuggestions = []"
+                autocomplete="off"
+              />
+              <div class="suggestions-dropdown" x-show="planDestSuggestions.length > 0">
+                <template x-for="(s, i) in planDestSuggestions" :key="i">
+                  <div class="suggestion-item" @mousedown.prevent @click="selectPlanDest(s)" x-text="s.display_name"></div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <button class="btn-primary btn-full" @click="getPlanRoutes()"
+              :disabled="planningRoutes || !planOriginCoord || !planDestCoord">
+              <span x-show="!planningRoutes">Get Routes</span>
+              <span x-show="planningRoutes">Finding routes…</span>
+            </button>
+            <div class="msg msg-error" x-show="planError" x-text="planError"></div>
+          </div>
+
+          <div class="section" x-show="planRoutes.length > 0">
+            <div class="sec-label">Choose Route</div>
+            <template x-for="(route, i) in planRoutes" :key="i">
+              <div class="plan-route-item" :class="{selected: selectedRoute === i}" @click="selectPlanRoute(i)">
+                <div class="plan-route-badge" :style="'background:' + planRouteColors[i]" x-text="i + 1"></div>
+                <div class="plan-route-info">
+                  <span class="plan-route-label" x-text="'Route ' + (i + 1)"></span>
+                  <span class="plan-route-meta" x-text="fmtDur(route.duration_s) + ' · ' + fmtDist(route.distance_m)"></span>
+                </div>
+                <div class="plan-route-check" x-show="selectedRoute === i">✓</div>
+              </div>
+            </template>
+          </div>
+
+          <div class="section" x-show="planRoutes.length > 0">
+            <div class="check-row" style="margin-top:0; margin-bottom:8px;">
+              <input type="checkbox" id="holdDestCheck" x-model="holdAtDestination" />
+              <label for="holdDestCheck" class="check-label">Stay at destination</label>
+            </div>
+            <button class="btn-green btn-full" @click="startPlanRoute()" :disabled="routeRunning">
+              ▶ Start Route
+            </button>
+            <div class="btn-row mt6" x-show="routeRunning">
+              <button class="btn-ghost" style="flex:1" @click="pauseRoute()"  x-show="!routePaused">⏸ Pause</button>
+              <button class="btn-ghost" style="flex:1" @click="resumeRoute()" x-show="routePaused">▶ Resume</button>
+              <button class="btn-danger" style="flex:1" @click="stopRoute()">■ Stop</button>
+            </div>
+            <div class="msg msg-error" x-show="routeError" x-text="routeError"></div>
+          </div>
+
+          <div class="section" x-show="routeRunning">
+            <div class="sec-label">Progress</div>
+            <div class="progress-bar">
+              <div class="progress-fill" :style="'width:' + routeProgressPct() + '%'"></div>
+            </div>
+          </div>
+
+          <div class="section" x-show="planRoutes.length === 0 && !planningRoutes">
+            <div class="hint">Enter addresses or click the map to set A and B.<br>First click = A, second = B.</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ══ MOTION MODE ══ -->
+      <template x-if="mode === 'motion'">
+        <div>
+          <!-- Pattern selector -->
+          <div class="section">
+            <div class="sec-label">Pattern</div>
+            <div class="pattern-tabs">
+              <button class="pattern-tab" :class="{active: motionPattern==='walk'}"
+                @click="motionPattern='walk'; motionError=''">Walk</button>
+              <button class="pattern-tab" :class="{active: motionPattern==='orbit'}"
+                @click="motionPattern='orbit'; motionError=''">Orbit</button>
+              <button class="pattern-tab" :class="{active: motionPattern==='oscillate'}"
+                @click="motionPattern='oscillate'; motionError=''">Oscillate</button>
+              <button class="pattern-tab" :class="{active: motionPattern==='drift'}"
+                @click="motionPattern='drift'; motionError=''">Drift</button>
+            </div>
+            <div class="hint mt6" x-show="motionPattern==='walk'">Wander around a center point within a radius.</div>
+            <div class="hint mt6" x-show="motionPattern==='orbit'">Circle a point at fixed radius and speed.</div>
+            <div class="hint mt6" x-show="motionPattern==='oscillate'">Ping-pong between two points.</div>
+            <div class="hint mt6" x-show="motionPattern==='drift'">Slowly creep in a wandering direction.</div>
+          </div>
+
+          <!-- Center (walk / orbit / drift) -->
+          <template x-if="motionPattern !== 'oscillate'">
+            <div class="section">
+              <div class="sec-label">Center</div>
+              <div class="coord-row">
+                <div>
+                  <label>Lat</label>
+                  <input type="number" step="any" placeholder="37.7749"
+                    x-model.number="motionCenterLat" />
+                </div>
+                <div>
+                  <label>Lng</label>
+                  <input type="number" step="any" placeholder="-122.4194"
+                    x-model.number="motionCenterLng" />
+                </div>
+              </div>
+              <div class="hint mt6">Click the map to set center.</div>
+            </div>
+          </template>
+
+          <!-- Endpoints (oscillate) -->
+          <template x-if="motionPattern === 'oscillate'">
+            <div class="section">
+              <div class="sec-label">
+                Point A <span class="ab-label ab-a">A</span>
+              </div>
+              <div class="coord-row">
+                <div>
+                  <label>Lat</label>
+                  <input type="number" step="any" placeholder="37.77"
+                    x-model.number="motionPointALat" />
+                </div>
+                <div>
+                  <label>Lng</label>
+                  <input type="number" step="any" placeholder="-122.41"
+                    x-model.number="motionPointALng" />
+                </div>
+              </div>
+              <div class="sec-label mt8">
+                Point B <span class="ab-label ab-b">B</span>
+              </div>
+              <div class="coord-row">
+                <div>
+                  <label>Lat</label>
+                  <input type="number" step="any" placeholder="37.78"
+                    x-model.number="motionPointBLat" />
+                </div>
+                <div>
+                  <label>Lng</label>
+                  <input type="number" step="any" placeholder="-122.42"
+                    x-model.number="motionPointBLng" />
+                </div>
+              </div>
+              <div class="hint mt6">Click map: 1st click = A, 2nd = B, 3rd resets.</div>
+            </div>
+          </template>
+
+          <!-- Radius (walk / orbit) -->
+          <template x-if="motionPattern === 'walk' || motionPattern === 'orbit'">
+            <div class="section">
+              <div class="sec-label">Radius</div>
+              <div class="speed-row">
+                <input type="range" min="50" max="2000" step="10"
+                  x-model.number="motionRadius" />
+                <span class="speed-val" x-text="motionRadius + ' m'"></span>
+              </div>
+            </div>
+          </template>
+
+          <!-- Speed -->
+          <div class="section">
+            <div class="sec-label">Speed</div>
+            <div class="speed-row">
+              <input type="range"
+                :min="motionPattern === 'drift' ? 0.5 : 1"
+                :max="motionPattern === 'drift' ? 15 : motionPattern === 'walk' ? 15 : 80"
+                step="0.5"
+                x-model.number="motionSpeed" />
+              <span class="speed-val" x-text="motionSpeed + ' mph'"></span>
+            </div>
+          </div>
+
+          <!-- Jitter (walk only) -->
+          <template x-if="motionPattern === 'walk'">
+            <div class="section">
+              <div class="sec-label">Jitter</div>
+              <div class="speed-row">
+                <input type="range" min="0" max="1" step="0.05"
+                  x-model.number="motionJitter" />
+                <span class="speed-val" x-text="motionJitter.toFixed(2)"></span>
+              </div>
+            </div>
+          </template>
+
+          <!-- Start / Stop -->
+          <div class="section">
+            <button class="btn-green btn-full"
+              @click="startMotion()"
+              :disabled="!canStartMotion() || motionRunning">
+              ▶ Start
+            </button>
+            <div class="mt6" x-show="motionRunning">
+              <button class="btn-danger btn-full" @click="stopMotion()">■ Stop</button>
+            </div>
+            <div class="msg msg-error" x-show="motionError" x-text="motionError"></div>
+          </div>
+        </div>
+      </template>
+
+    </aside>
+
+    <div class="map-shell">
+      <div id="map"></div>
+      <div class="map-overlay" x-show="!mapReady && !mapError" x-cloak>
+        <strong>Loading map</strong>
+        <span>Connecting to tile service…</span>
+      </div>
+      <div class="map-overlay" x-show="mapError" x-cloak>
+        <strong>Map unavailable</strong>
+        <span x-text="mapError"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function app() {
+  const mapState = {
+    map: null,
+    mapStyleLoaded: false,
+    locationMarker: null,
+    locationMarkerLat: null,
+    locationMarkerLng: null,
+    waypointMarkers: [],
+    sse: null,
+    locationRequestId: 0,
+    suggestAbortController: null,
+    suggestTimeout: null,
+    planMarkerA: null,
+    planMarkerB: null,
+    planLayersReady: false,
+    planOriginSuggestTimeout: null,
+    planDestSuggestTimeout: null,
+    motionMarkerA: null,
+    motionMarkerB: null,
+  };
+
+  return {
+    mode: 'location',
+    tunnelState: 'UNKNOWN',
+    spoofActive: false,
+    currentLat: null,
+    currentLng: null,
+    routeRunning: false,
+    routePaused: false,
+    routeProgress: {},
+    motionRunning: false,
+    motionState: null,
+    motionPattern: 'walk',
+    motionCenterLat: null,
+    motionCenterLng: null,
+    motionPointALat: null,
+    motionPointALng: null,
+    motionPointBLat: null,
+    motionPointBLng: null,
+    motionRadius: 200,
+    motionSpeed: 3,
+    motionJitter: 0.5,
+    motionError: '',
+    _motionOscClick: 0,
+    mapReady: false,
+    mapError: '',
+
+    searchQuery: '',
+    searching: false,
+    searchError: '',
+    suggestions: [],
+    showSuggestions: false,
+    inputLat: null,
+    inputLng: null,
+    settingLoc: false,
+    locError: '',
+    locOk: '',
+
+    waypoints: [],
+    routeSpeed: 30,
+    routeLoop: false,
+    routeError: '',
+
+    planOrigin: '',
+    planDest: '',
+    planOriginCoord: null,
+    planDestCoord: null,
+    planOriginSuggestions: [],
+    planDestSuggestions: [],
+    planRoutes: [],
+    selectedRoute: 0,
+    holdAtDestination: true,
+    planningRoutes: false,
+    planError: '',
+    planRouteColors: ['#4d87f5', '#2ecfaa', '#f97316'],
+
+    async init() {
+      this.connectSSE();
+      await this.fetchStatus();
+      this.initMap();
+    },
+
+    initMap() {
+      this.mapReady = false;
+      this.mapError = '';
+      try {
+        const initLat = (this.currentLat !== null) ? this.currentLat : 37.7749;
+        const initLng = (this.currentLng !== null) ? this.currentLng : -122.4194;
+
+        mapState.map = new maplibregl.Map({
+          container: document.getElementById('map'),
+          style: 'https://tiles.openfreemap.org/styles/liberty',
+          center: [initLng, initLat],
+          zoom: 12,
+        });
+
+        mapState.map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+        mapState.map.once('load', () => {
+          mapState.mapStyleLoaded = true;
+          this.mapReady = true;
+          mapState.map.getCanvas().style.cursor = 'crosshair';
+          if (this.currentLat !== null && this.currentLng !== null) {
+            this.updateLocationMarker(this.currentLat, this.currentLng);
+          } else {
+            this.centerOnRealLocation();
+          }
+          this.initPlanLayers();
+        });
+
+        mapState.map.on('error', (e) => {
+          this.mapError = e.error?.message || 'Map tiles failed to load.';
+        });
+
+        mapState.map.on('click', (e) => {
+          if (!this.isValidCoordinate(e.lngLat.lat, e.lngLat.lng)) return;
+          this.onMapClick(e.lngLat.lat, e.lngLat.lng);
+        });
+      } catch (e) {
+        this.mapError = e.message || 'Unable to initialize map.';
+      }
+    },
+
+    centerOnRealLocation() {
+      if (!navigator.geolocation || !mapState.map) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          if (mapState.map && this.isValidCoordinate(lat, lng)) {
+            mapState.map.flyTo({ center: [lng, lat], zoom: 12 });
+          }
+        },
+        () => {},
+        { timeout: 5000, maximumAge: 300000 }
+      );
+    },
+
+    focusLocationOnMap(lat, lng, animated = true) {
+      if (!mapState.map || !this.isValidCoordinate(lat, lng)) return;
+      if (animated) {
+        mapState.map.flyTo({ center: [lng, lat], zoom: 14 });
+      } else {
+        mapState.map.jumpTo({ center: [lng, lat], zoom: 14 });
+      }
+    },
+
+    isValidCoordinate(lat, lng) {
+      return Number.isFinite(lat) && Number.isFinite(lng)
+        && lat >= -90 && lat <= 90
+        && lng >= -180 && lng <= 180;
+    },
+
+    onMapClick(lat, lng) {
+      if (!this.isValidCoordinate(lat, lng)) return;
+      if (this.mode === 'motion') {
+        this.onMotionMapClick(lat, lng);
+        return;
+      }
+      if (this.mode === 'route') {
+        this.addWaypoint(lat, lng);
+      } else if (this.mode === 'location') {
+        this.inputLat = parseFloat(lat.toFixed(6));
+        this.inputLng = parseFloat(lng.toFixed(6));
+        this.setLocation(lat, lng);
+      } else if (this.mode === 'plan') {
+        if (!this.planOriginCoord) {
+          this.setPlanOriginFromCoord(lat, lng);
+        } else if (!this.planDestCoord) {
+          this.setPlanDestFromCoord(lat, lng);
+        } else {
+          this.planOriginCoord = null;
+          this.planOrigin = '';
+          this.planRoutes = [];
+          this.planError = '';
+          this.updatePlanLayers();
+          this.updatePlanMarkers();
+          this.setPlanOriginFromCoord(lat, lng);
+        }
+      }
+    },
+
+    updateLocationMarker(lat, lng) {
+      if (!mapState.map || !this.isValidCoordinate(lat, lng)) return;
+      if (
+        mapState.locationMarker
+        && Math.abs(mapState.locationMarkerLat - lat) < 0.0000001
+        && Math.abs(mapState.locationMarkerLng - lng) < 0.0000001
+      ) return;
+
+      mapState.locationMarkerLat = lat;
+      mapState.locationMarkerLng = lng;
+
+      if (!mapState.locationMarker) {
+        const el = document.createElement('div');
+        el.className = 'location-pin';
+        el.setAttribute('role', 'img');
+        el.setAttribute('aria-label', 'Spoofed location');
+        mapState.locationMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([lng, lat])
+          .addTo(mapState.map);
+      } else {
+        mapState.locationMarker.setLngLat([lng, lat]);
+      }
+    },
+
+    createWaypointMarker(lat, lng, idx) {
+      const el = document.createElement('div');
+      el.className = 'waypoint-marker';
+      el.textContent = String(idx + 1);
+      el.addEventListener('click', (e) => e.stopPropagation());
+      return new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([lng, lat])
+        .addTo(mapState.map);
+    },
+
+    addWaypoint(lat, lng) {
+      if (!mapState.map) return;
+      const idx = this.waypoints.length;
+      this.waypoints.push([lat, lng]);
+      const marker = this.createWaypointMarker(lat, lng, idx);
+      mapState.waypointMarkers.push(marker);
+      this.updateRouteLine();
+    },
+
+    removeWaypoint(i) {
+      this.waypoints.splice(i, 1);
+      const m = mapState.waypointMarkers.splice(i, 1)[0];
+      if (m) m.remove();
+      mapState.waypointMarkers.forEach((mk, j) => {
+        const el = mk.getElement();
+        if (el) el.textContent = String(j + 1);
+      });
+      this.updateRouteLine();
+    },
+
+    clearWaypoints() {
+      mapState.waypointMarkers.forEach(m => m.remove());
+      mapState.waypointMarkers = [];
+      this.waypoints = [];
+      this.updateRouteLine();
+    },
+
+    updateRouteLine() {
+      if (!mapState.map || !mapState.mapStyleLoaded) return;
+      const sourceId = 'route-source';
+      const layerId = 'route-layer';
+      if (mapState.map.getLayer(layerId)) mapState.map.removeLayer(layerId);
+      if (mapState.map.getSource(sourceId)) mapState.map.removeSource(sourceId);
+      if (this.waypoints.length >= 2) {
+        mapState.map.addSource(sourceId, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: this.waypoints.map(([lat, lng]) => [lng, lat]),
+            },
+          },
+        });
+        mapState.map.addLayer({
+          id: layerId,
+          type: 'line',
+          source: sourceId,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#4d87f5',
+            'line-width': 2,
+            'line-opacity': 0.6,
+            'line-dasharray': [2, 1.5],
+          },
+        });
+      }
+    },
+
+    onSearchInput() {
+      clearTimeout(mapState.suggestTimeout);
+      const q = this.searchQuery.trim();
+      if (!q || q.length < 2) { this.suggestions = []; this.showSuggestions = false; return; }
+      mapState.suggestTimeout = setTimeout(() => this.fetchSuggestions(), 350);
+    },
+
+    async fetchSuggestions() {
+      const q = this.searchQuery.trim();
+      if (!q || q.length < 2) return;
+      if (mapState.suggestAbortController) mapState.suggestAbortController.abort();
+      mapState.suggestAbortController = new AbortController();
+      try {
+        let url = '/api/geocode/suggest?q=' + encodeURIComponent(q);
+        if (this.currentLat !== null && this.currentLng !== null) {
+          url += `&lat=${this.currentLat}&lng=${this.currentLng}`;
+        } else if (mapState.map) {
+          const c = mapState.map.getCenter();
+          url += `&lat=${c.lat}&lng=${c.lng}`;
+        }
+        const r = await fetch(url, { signal: mapState.suggestAbortController.signal });
+        const data = await r.json();
+        this.suggestions = Array.isArray(data) ? data : [];
+        this.showSuggestions = this.suggestions.length > 0;
+      } catch(e) {
+        if (e.name !== 'AbortError') { this.suggestions = []; this.showSuggestions = false; }
+      }
+    },
+
+    async selectSuggestion(s) {
+      const lat = Number(s.lat);
+      const lng = Number(s.lng);
+      this.searchQuery = s.display_name;
+      this.showSuggestions = false;
+      this.suggestions = [];
+      this.inputLat = parseFloat(lat.toFixed(6));
+      this.inputLng = parseFloat(lng.toFixed(6));
+      this.focusLocationOnMap(lat, lng);
+      if (this.mode === 'location') {
+        await this.setLocation(lat, lng);
+      }
+    },
+
+    setMode(m) {
+      this.mode = m;
+      this.locError = '';
+      this.locOk = '';
+      this.routeError = '';
+      this.planError = '';
+      this.motionError = '';
+      if (mapState.map) {
+        const crosshair = (m === 'location' || m === 'plan' || m === 'motion');
+        mapState.map.getCanvas().style.cursor = crosshair ? 'crosshair' : '';
+      }
+      if (m === 'motion' && this.currentLat !== null && this.currentLng !== null) {
+        if (this.motionCenterLat === null) this.motionCenterLat = parseFloat(this.currentLat.toFixed(6));
+        if (this.motionCenterLng === null) this.motionCenterLng = parseFloat(this.currentLng.toFixed(6));
+      }
+    },
+
+    async searchAddress() {
+      if (!this.searchQuery.trim()) return;
+      this.searching = true;
+      this.searchError = '';
+      try {
+        const r = await fetch('/api/geocode?q=' + encodeURIComponent(this.searchQuery));
+        const d = await r.json();
+        if (!r.ok || d.error) { this.searchError = d.error || 'Not found'; return; }
+        const lat = Number(d.lat);
+        const lng = Number(d.lng);
+        if (!this.isValidCoordinate(lat, lng)) { this.searchError = 'Geocoder returned invalid coordinates'; return; }
+        this.inputLat = parseFloat(lat.toFixed(6));
+        this.inputLng = parseFloat(lng.toFixed(6));
+        this.focusLocationOnMap(lat, lng);
+        if (this.mode === 'location') { await this.setLocation(lat, lng); }
+      } catch(e) {
+        this.searchError = 'Network error';
+      } finally {
+        this.searching = false;
+      }
+    },
+
+    async setLocation(lat = this.inputLat, lng = this.inputLng) {
+      lat = Number(lat);
+      lng = Number(lng);
+      if (!this.isValidCoordinate(lat, lng)) {
+        this.locError = 'Latitude must be -90..90 and longitude must be -180..180';
+        return false;
+      }
+      const requestId = ++mapState.locationRequestId;
+      this.settingLoc = true;
+      this.locError = '';
+      this.locOk = '';
+      try {
+        const r = await fetch('/api/location/set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) {
+          if (requestId === mapState.locationRequestId) this.locError = d.error || 'Failed';
+          return false;
+        }
+        if (requestId === mapState.locationRequestId) {
+          this.inputLat = parseFloat(lat.toFixed(6));
+          this.inputLng = parseFloat(lng.toFixed(6));
+          this.locOk = `Set to ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          this.updateLocationMarker(lat, lng);
+        }
+        setTimeout(() => { this.locOk = ''; }, 3000);
+        return true;
+      } catch(e) {
+        if (requestId === mapState.locationRequestId) this.locError = 'Network error';
+        return false;
+      } finally {
+        if (requestId === mapState.locationRequestId) this.settingLoc = false;
+      }
+    },
+
+    async clearLocation() {
+      try {
+        const r = await fetch('/api/location/clear', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) { this.locError = d.error || 'Failed to clear'; return; }
+        if (mapState.locationMarker) {
+          mapState.locationMarker.remove();
+          mapState.locationMarker = null;
+          mapState.locationMarkerLat = null;
+          mapState.locationMarkerLng = null;
+        }
+        this.inputLat = null;
+        this.inputLng = null;
+      } catch(e) {
+        this.locError = 'Network error';
+      }
+    },
+
+    async startRoute() {
+      if (this.waypoints.length < 2) return;
+      this.routeError = '';
+      try {
+        const r = await fetch('/api/route/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            waypoints: this.waypoints.map(([lat, lng]) => ({ lat, lng })),
+            speed_mph: this.routeSpeed,
+            loop: this.routeLoop,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { this.routeError = d.error || 'Failed to start'; return; }
+        this.routeRunning = true;
+        this.routePaused = false;
+      } catch(e) {
+        this.routeError = 'Network error';
+      }
+    },
+
+    async pauseRoute()  { await fetch('/api/route/pause',  { method: 'POST' }); this.routePaused = true; },
+    async resumeRoute() { await fetch('/api/route/resume', { method: 'POST' }); this.routePaused = false; },
+
+    async stopRoute() {
+      await fetch('/api/route/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clear_location: false }),
+      });
+      this.routeRunning = false;
+      this.routePaused = false;
+    },
+
+    routeProgressPct() {
+      const p = this.routeProgress;
+      if (!p || !p.total_waypoints || p.total_waypoints < 2) return 0;
+      const total_segs = p.total_waypoints - 1;
+      return Math.min(100, ((p.segment_index + (p.fraction || 0)) / total_segs) * 100);
+    },
+
+    initPlanLayers() {
+      if (!mapState.map || mapState.planLayersReady) return;
+      for (let i = 0; i < 3; i++) {
+        mapState.map.addSource(`plan-src-${i}`, {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+        });
+        mapState.map.addLayer({
+          id: `plan-layer-${i}`,
+          type: 'line',
+          source: `plan-src-${i}`,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': this.planRouteColors[i], 'line-width': 3, 'line-opacity': 0.8 },
+        });
+        const idx = i;
+        mapState.map.on('click', `plan-layer-${i}`, () => this.selectPlanRoute(idx));
+        mapState.map.on('mouseenter', `plan-layer-${i}`, () => { mapState.map.getCanvas().style.cursor = 'pointer'; });
+        mapState.map.on('mouseleave', `plan-layer-${i}`, () => { mapState.map.getCanvas().style.cursor = this.mode === 'plan' ? 'crosshair' : ''; });
+      }
+      mapState.planLayersReady = true;
+    },
+
+    updatePlanLayers() {
+      if (!mapState.map || !mapState.planLayersReady) return;
+      for (let i = 0; i < 3; i++) {
+        const src = mapState.map.getSource(`plan-src-${i}`);
+        if (!src) continue;
+        if (i < this.planRoutes.length) {
+          const route = this.planRoutes[i];
+          src.setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: route.waypoints.map(([lat, lng]) => [lng, lat]) },
+          });
+          const sel = this.selectedRoute === i;
+          mapState.map.setPaintProperty(`plan-layer-${i}`, 'line-width',   sel ? 5 : 2.5);
+          mapState.map.setPaintProperty(`plan-layer-${i}`, 'line-opacity', sel ? 1.0 : 0.45);
+        } else {
+          src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: [] } });
+        }
+      }
+    },
+
+    updatePlanMarkers() {
+      if (!mapState.map) return;
+      const makeEl = (label, bg) => {
+        const el = document.createElement('div');
+        el.className = 'waypoint-marker';
+        el.style.cssText = `background:${bg}; border-color:#fff;`;
+        el.textContent = label;
+        return el;
+      };
+      if (this.planOriginCoord) {
+        const lngLat = [this.planOriginCoord.lng, this.planOriginCoord.lat];
+        if (!mapState.planMarkerA) {
+          mapState.planMarkerA = new maplibregl.Marker({ element: makeEl('A', '#2ecfaa'), anchor: 'center' })
+            .setLngLat(lngLat).addTo(mapState.map);
+        } else {
+          mapState.planMarkerA.setLngLat(lngLat);
+        }
+      } else if (mapState.planMarkerA) {
+        mapState.planMarkerA.remove(); mapState.planMarkerA = null;
+      }
+      if (this.planDestCoord) {
+        const lngLat = [this.planDestCoord.lng, this.planDestCoord.lat];
+        if (!mapState.planMarkerB) {
+          mapState.planMarkerB = new maplibregl.Marker({ element: makeEl('B', '#e05555'), anchor: 'center' })
+            .setLngLat(lngLat).addTo(mapState.map);
+        } else {
+          mapState.planMarkerB.setLngLat(lngLat);
+        }
+      } else if (mapState.planMarkerB) {
+        mapState.planMarkerB.remove(); mapState.planMarkerB = null;
+      }
+    },
+
+    onPlanOriginInput() {
+      clearTimeout(mapState.planOriginSuggestTimeout);
+      this.planOriginCoord = null;
+      const q = this.planOrigin.trim();
+      if (!q || q.length < 2) { this.planOriginSuggestions = []; return; }
+      mapState.planOriginSuggestTimeout = setTimeout(() => this.fetchPlanSuggestions(q, 'origin'), 350);
+    },
+
+    onPlanDestInput() {
+      clearTimeout(mapState.planDestSuggestTimeout);
+      this.planDestCoord = null;
+      const q = this.planDest.trim();
+      if (!q || q.length < 2) { this.planDestSuggestions = []; return; }
+      mapState.planDestSuggestTimeout = setTimeout(() => this.fetchPlanSuggestions(q, 'dest'), 350);
+    },
+
+    async fetchPlanSuggestions(q, which) {
+      try {
+        let url = '/api/geocode/suggest?q=' + encodeURIComponent(q);
+        if (mapState.map) { const c = mapState.map.getCenter(); url += `&lat=${c.lat}&lng=${c.lng}`; }
+        const r = await fetch(url);
+        const data = await r.json();
+        const results = Array.isArray(data) ? data : [];
+        if (which === 'origin') this.planOriginSuggestions = results;
+        else this.planDestSuggestions = results;
+      } catch(e) {}
+    },
+
+    selectPlanOrigin(s) {
+      this.planOrigin = s.display_name;
+      this.planOriginCoord = { lat: Number(s.lat), lng: Number(s.lng) };
+      this.planOriginSuggestions = [];
+      this.planRoutes = [];
+      this.updatePlanMarkers();
+      this.updatePlanLayers();
+      if (mapState.map) mapState.map.flyTo({ center: [s.lng, s.lat], zoom: 13 });
+    },
+
+    selectPlanDest(s) {
+      this.planDest = s.display_name;
+      this.planDestCoord = { lat: Number(s.lat), lng: Number(s.lng) };
+      this.planDestSuggestions = [];
+      this.planRoutes = [];
+      this.updatePlanMarkers();
+      this.updatePlanLayers();
+      if (mapState.map) mapState.map.flyTo({ center: [s.lng, s.lat], zoom: 13 });
+    },
+
+    async planOriginFromText() {
+      const q = this.planOrigin.trim();
+      if (!q) return;
+      try {
+        const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
+        const d = await r.json();
+        if (r.ok && !d.error) this.selectPlanOrigin(d);
+      } catch(e) {}
+    },
+
+    async planDestFromText() {
+      const q = this.planDest.trim();
+      if (!q) return;
+      try {
+        const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
+        const d = await r.json();
+        if (r.ok && !d.error) this.selectPlanDest(d);
+      } catch(e) {}
+    },
+
+    setPlanOriginFromCoord(lat, lng) {
+      this.planOriginCoord = { lat, lng };
+      this.planOrigin = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      this.planOriginSuggestions = [];
+      this.updatePlanMarkers();
+    },
+
+    setPlanDestFromCoord(lat, lng) {
+      this.planDestCoord = { lat, lng };
+      this.planDest = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      this.planDestSuggestions = [];
+      this.updatePlanMarkers();
+    },
+
+    async getPlanRoutes() {
+      if (!this.planOriginCoord || !this.planDestCoord) return;
+      this.planningRoutes = true;
+      this.planError = '';
+      this.planRoutes = [];
+      this.updatePlanLayers();
+      try {
+        const r = await fetch('/api/route/plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ origin: this.planOriginCoord, destination: this.planDestCoord }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { this.planError = d.error || 'Failed to get routes'; return; }
+        this.planRoutes = d.routes || [];
+        this.selectedRoute = 0;
+        this.updatePlanLayers();
+        this.fitPlanRoutes();
+      } catch(e) {
+        this.planError = 'Network error';
+      } finally {
+        this.planningRoutes = false;
+      }
+    },
+
+    fitPlanRoutes() {
+      if (!mapState.map || this.planRoutes.length === 0) return;
+      const allPts = this.planRoutes.flatMap(r => r.waypoints);
+      if (!allPts.length) return;
+      const lngs = allPts.map(([, lng]) => lng);
+      const lats = allPts.map(([lat]) => lat);
+      mapState.map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 60, maxZoom: 15 },
+      );
+    },
+
+    selectPlanRoute(i) {
+      this.selectedRoute = i;
+      this.updatePlanLayers();
+    },
+
+    async startPlanRoute() {
+      if (!this.planRoutes.length) return;
+      const route = this.planRoutes[this.selectedRoute];
+      this.routeError = '';
+      try {
+        const r = await fetch('/api/route/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            waypoints: route.waypoints.map(([lat, lng]) => ({ lat, lng })),
+            speed_mph: 30,
+            loop: false,
+            hold_final: this.holdAtDestination,
+            segment_speeds_mph: route.segment_speeds_mph,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { this.routeError = d.error || 'Failed to start route'; return; }
+        this.routeRunning = true;
+        this.routePaused = false;
+      } catch(e) {
+        this.routeError = 'Network error';
+      }
+    },
+
+    fmtDist(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m) + ' m'; },
+    fmtDur(s)  {
+      const m = Math.round(s / 60);
+      if (m < 60) return m + ' min';
+      return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+    },
+
+    tunnelDotClass() {
+      if (this.tunnelState === 'DEVICE_READY')  return 'dot-green';
+      if (this.tunnelState === 'UP_NO_DEVICE')  return 'dot-yellow';
+      return 'dot-red';
+    },
+
+    tunnelLabel() {
+      if (this.tunnelState === 'DEVICE_READY') return 'Tunnel ready';
+      if (this.tunnelState === 'UP_NO_DEVICE') return 'No device';
+      if (this.tunnelState === 'DOWN')         return 'Tunnel down';
+      return 'Checking…';
+    },
+
+    async fetchStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        this.applyStatus(d);
+      } catch(e) {}
+    },
+
+    applyStatus(d) {
+      if (d.tunnel) this.tunnelState = d.tunnel;
+      if (typeof d.spoof_active === 'boolean') this.spoofActive = d.spoof_active;
+      if (d.lat !== undefined) this.currentLat = d.lat;
+      if (d.lng !== undefined) this.currentLng = d.lng;
+      if (typeof d.route_running === 'boolean') this.routeRunning = d.route_running;
+      if (d.route_progress) this.routeProgress = d.route_progress;
+      if (typeof d.motion_running === 'boolean') this.motionRunning = d.motion_running;
+      if (d.motion_state) this.motionState = d.motion_state;
+      const lat = Number(this.currentLat);
+      const lng = Number(this.currentLng);
+      if (this.spoofActive && this.isValidCoordinate(lat, lng)) {
+        this.inputLat = parseFloat(lat.toFixed(6));
+        this.inputLng = parseFloat(lng.toFixed(6));
+        if (mapState.map) this.updateLocationMarker(lat, lng);
+      }
+    },
+
+    connectSSE() {
+      const es = new EventSource('/events');
+      mapState.sse = es;
+
+      es.addEventListener('status', (e) => {
+        const d = JSON.parse(e.data);
+        this.applyStatus(d);
+        if (d.lat !== null && d.lng !== null && d.lat !== undefined && d.lng !== undefined) {
+          if (this.spoofActive || this.routeRunning) this.updateLocationMarker(d.lat, d.lng);
+        }
+      });
+
+      es.addEventListener('route_progress', (e) => {
+        const d = JSON.parse(e.data);
+        this.routeProgress = d;
+        if (d.lat !== null && d.lng !== null && d.lat !== undefined && d.lng !== undefined) {
+          this.updateLocationMarker(d.lat, d.lng);
+        }
+      });
+
+      es.addEventListener('route_error', (e) => {
+        const d = JSON.parse(e.data);
+        this.routeError = d.error || 'Route stopped unexpectedly';
+        this.routeRunning = false;
+        this.routePaused = false;
+      });
+
+      es.addEventListener('motion_tick', (e) => {
+        const d = JSON.parse(e.data);
+        this.motionState = d;
+        if (d.lat !== null && d.lng !== null && d.lat !== undefined && d.lng !== undefined) {
+          this.currentLat = d.lat;
+          this.currentLng = d.lng;
+          this.updateLocationMarker(d.lat, d.lng);
+        }
+      });
+
+      es.addEventListener('motion_error', (e) => {
+        const d = JSON.parse(e.data);
+        this.motionError = d.error || 'Motion stopped unexpectedly';
+        this.motionRunning = false;
+      });
+
+      es.addEventListener('error', () => {});
+    },
+
+    onMotionMapClick(lat, lng) {
+      if (this.motionPattern !== 'oscillate') {
+        this.motionCenterLat = parseFloat(lat.toFixed(6));
+        this.motionCenterLng = parseFloat(lng.toFixed(6));
+      } else {
+        const click = this._motionOscClick;
+        if (click === 0 || click >= 2) {
+          this.motionPointALat = parseFloat(lat.toFixed(6));
+          this.motionPointALng = parseFloat(lng.toFixed(6));
+          this.motionPointBLat = null;
+          this.motionPointBLng = null;
+          this._motionOscClick = 1;
+          this.updateMotionOscMarkers();
+        } else {
+          this.motionPointBLat = parseFloat(lat.toFixed(6));
+          this.motionPointBLng = parseFloat(lng.toFixed(6));
+          this._motionOscClick = 2;
+          this.updateMotionOscMarkers();
+        }
+      }
+    },
+
+    updateMotionOscMarkers() {
+      if (!mapState.map) return;
+      const makeEl = (label, bg) => {
+        const el = document.createElement('div');
+        el.className = 'waypoint-marker';
+        el.style.cssText = `background:${bg}; border-color:#fff;`;
+        el.textContent = label;
+        return el;
+      };
+      if (this.motionPointALat !== null && this.motionPointALng !== null) {
+        const ll = [this.motionPointALng, this.motionPointALat];
+        if (!mapState.motionMarkerA) {
+          mapState.motionMarkerA = new maplibregl.Marker({
+            element: makeEl('A', '#2ecfaa'), anchor: 'center'
+          }).setLngLat(ll).addTo(mapState.map);
+        } else {
+          mapState.motionMarkerA.setLngLat(ll);
+        }
+      } else if (mapState.motionMarkerA) {
+        mapState.motionMarkerA.remove(); mapState.motionMarkerA = null;
+      }
+      if (this.motionPointBLat !== null && this.motionPointBLng !== null) {
+        const ll = [this.motionPointBLng, this.motionPointBLat];
+        if (!mapState.motionMarkerB) {
+          mapState.motionMarkerB = new maplibregl.Marker({
+            element: makeEl('B', '#e05555'), anchor: 'center'
+          }).setLngLat(ll).addTo(mapState.map);
+        } else {
+          mapState.motionMarkerB.setLngLat(ll);
+        }
+      } else if (mapState.motionMarkerB) {
+        mapState.motionMarkerB.remove(); mapState.motionMarkerB = null;
+      }
+    },
+
+    canStartMotion() {
+      if (this.motionPattern === 'oscillate') {
+        return this.motionPointALat !== null && this.motionPointALng !== null
+          && this.motionPointBLat !== null && this.motionPointBLng !== null;
+      }
+      return this.motionCenterLat !== null && this.motionCenterLng !== null;
+    },
+
+    async startMotion() {
+      if (!this.canStartMotion() || this.motionRunning) return;
+      this.motionError = '';
+      const body = { pattern: this.motionPattern, speed_mph: this.motionSpeed };
+      if (this.motionPattern !== 'oscillate') {
+        body.center = { lat: this.motionCenterLat, lng: this.motionCenterLng };
+        if (this.motionPattern === 'walk' || this.motionPattern === 'orbit') {
+          body.radius_m = this.motionRadius;
+        }
+        if (this.motionPattern === 'walk') body.jitter = this.motionJitter;
+      } else {
+        body.point_a = { lat: this.motionPointALat, lng: this.motionPointALng };
+        body.point_b = { lat: this.motionPointBLat, lng: this.motionPointBLng };
+      }
+      try {
+        const r = await fetch('/api/motion/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { this.motionError = d.error || 'Failed to start'; return; }
+        this.motionRunning = true;
+      } catch(e) {
+        this.motionError = 'Network error';
+      }
+    },
+
+    async stopMotion() {
+      await fetch('/api/motion/stop', { method: 'POST' });
+      this.motionRunning = false;
+    },
+  };
+}
+</script>
+</body>
+</html>
