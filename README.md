@@ -13,7 +13,7 @@ iOS location spoofing CLI with a web map UI, built for developer testing on phys
 
 ```bash
 cd /path/to/spoofloc
-pip install -e .
+pip3 install -e .
 ```
 
 ## One-time setup (USB required once)
@@ -167,6 +167,6 @@ Change the tunnel mode: `spoofloc config set tunnel.mode start-tunnel`
 ## Running tests
 
 ```bash
-pip install -e ".[dev]"
+pip3 install -e ".[dev]"
 pytest
 ```
