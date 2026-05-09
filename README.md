@@ -1,6 +1,6 @@
 # spoofloc
 
-iOS location spoofing CLI with a web map UI
+iOS location spoofing CLI with a web map UI, built for developer testing on physical iPhones.
 
 ## Requirements
 
