@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" />
-  <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/static/maplibre-gl.css" />
+  <script src="/static/maplibre-gl.js"></script>
+  <script defer src="/static/alpine.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     [x-cloak] { display: none !important; }
@@ -414,6 +414,32 @@
     }
     .map-overlay span { font-size: 10px; color: var(--text-muted); max-width: 360px; line-height: 1.8; }
 
+    /* ── Offline pill ── */
+    .offline-pill {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10px; font-weight: 500; letter-spacing: .04em;
+      color: #f97316;
+      border: 1px solid rgba(249,115,22,.35);
+      background: rgba(249,115,22,.08);
+      border-radius: 99px; padding: 2px 8px;
+    }
+
+    /* ── Tile cache bar ── */
+    .cache-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 12px;
+      border-top: 1px solid var(--border);
+      font-size: 10px; color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .cache-bar button {
+      font-size: 10px; padding: 2px 7px;
+      background: transparent; color: var(--text-muted);
+      border: 1px solid var(--border-strong); border-radius: 4px; cursor: pointer;
+    }
+    .cache-bar button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+    .cache-bar button:disabled { opacity: .3; cursor: default; }
+
     /* ── Plan route items ── */
     .plan-route-item {
       display: flex;
@@ -484,6 +510,8 @@
     </div>
 
     <div class="hdr-right">
+      <div class="offline-pill" x-show="!isOnline" x-cloak>Offline</div>
+
       <div class="status-pill" x-show="spoofActive">
         <span class="dot dot-green"></span>
         <span>Spoofing</span>
@@ -663,6 +691,11 @@
                 </template>
               </div>
             </div>
+            <button class="btn-ghost" style="margin-top:6px; font-size:11px; padding:4px 8px;"
+              :disabled="currentLat === null || currentLng === null"
+              @click="setPlanOriginFromCoord(currentLat, currentLng)">
+              ⊙ Use current location
+            </button>
           </div>
 
           <div class="section">
@@ -868,6 +901,11 @@
         </div>
       </template>
 
+      <div class="cache-bar">
+        <span x-text="'Tiles: ' + fmtCacheSize(cacheBytes) + ' / 150 MB'"></span>
+        <button @click="purgeCache()" :disabled="cacheBytes === 0">Purge</button>
+      </div>
+
     </aside>
 
     <div class="map-shell">
@@ -961,10 +999,56 @@ function app() {
     planError: '',
     planRouteColors: ['#4d87f5', '#2ecfaa', '#f97316'],
 
+    isOnline: navigator.onLine,
+    cacheBytes: 0,
+
     async init() {
       this.connectSSE();
       await this.fetchStatus();
       this.initMap();
+      this.initServiceWorker();
+      window.addEventListener('online',  () => { this.isOnline = true; });
+      window.addEventListener('offline', () => { this.isOnline = false; });
+    },
+
+    initServiceWorker() {
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.addEventListener('message', e => {
+        if (e.data?.type === 'CACHE_SIZE') this.cacheBytes = e.data.bytes;
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        this.requestCacheSize();
+      });
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(() => this.requestCacheSize())
+        .catch(() => {});
+    },
+
+    requestCacheSize() {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'GET_SIZE' });
+      }
+    },
+
+    purgeCache() {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'PURGE' });
+      }
+      this.cacheBytes = 0;
+    },
+
+    fmtCacheSize(bytes) {
+      if (!bytes) return '0 MB';
+      const mb = bytes / (1024 * 1024);
+      return mb < 1 ? `${(bytes / 1024).toFixed(0)} KB` : `${mb.toFixed(1)} MB`;
+    },
+
+    parseCoordInput(s) {
+      const m = s.trim().match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
+      if (!m) return null;
+      const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+      return { lat, lng };
     },
 
     initMap() {
@@ -1170,6 +1254,7 @@ function app() {
     async fetchSuggestions() {
       const q = this.searchQuery.trim();
       if (!q || q.length < 2) return;
+      if (!this.isOnline) return;
       if (mapState.suggestAbortController) mapState.suggestAbortController.abort();
       mapState.suggestAbortController = new AbortController();
       try {
@@ -1221,11 +1306,24 @@ function app() {
     },
 
     async searchAddress() {
-      if (!this.searchQuery.trim()) return;
-      this.searching = true;
+      const q = this.searchQuery.trim();
+      if (!q) return;
       this.searchError = '';
+
+      const coord = this.parseCoordInput(q);
+      if (coord) {
+        this.inputLat = parseFloat(coord.lat.toFixed(6));
+        this.inputLng = parseFloat(coord.lng.toFixed(6));
+        this.focusLocationOnMap(coord.lat, coord.lng);
+        if (this.mode === 'location') await this.setLocation(coord.lat, coord.lng);
+        return;
+      }
+
+      if (!this.isOnline) { this.searchError = 'Offline — enter coordinates as "lat, lng"'; return; }
+
+      this.searching = true;
       try {
-        const r = await fetch('/api/geocode?q=' + encodeURIComponent(this.searchQuery));
+        const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
         const d = await r.json();
         if (!r.ok || d.error) { this.searchError = d.error || 'Not found'; return; }
         const lat = Number(d.lat);
@@ -1236,7 +1334,7 @@ function app() {
         this.focusLocationOnMap(lat, lng);
         if (this.mode === 'location') { await this.setLocation(lat, lng); }
       } catch(e) {
-        this.searchError = 'Network error';
+        this.searchError = 'Offline — enter coordinates as "lat, lng"';
       } finally {
         this.searching = false;
       }
@@ -1420,6 +1518,16 @@ function app() {
       this.planOriginCoord = null;
       const q = this.planOrigin.trim();
       if (!q || q.length < 2) { this.planOriginSuggestions = []; return; }
+      const coord = this.parseCoordInput(q);
+      if (coord) {
+        this.planOriginCoord = coord;
+        this.planOriginSuggestions = [];
+        this.planRoutes = [];
+        this.updatePlanMarkers();
+        this.updatePlanLayers();
+        return;
+      }
+      if (!this.isOnline) return;
       mapState.planOriginSuggestTimeout = setTimeout(() => this.fetchPlanSuggestions(q, 'origin'), 350);
     },
 
@@ -1428,10 +1536,21 @@ function app() {
       this.planDestCoord = null;
       const q = this.planDest.trim();
       if (!q || q.length < 2) { this.planDestSuggestions = []; return; }
+      const coord = this.parseCoordInput(q);
+      if (coord) {
+        this.planDestCoord = coord;
+        this.planDestSuggestions = [];
+        this.planRoutes = [];
+        this.updatePlanMarkers();
+        this.updatePlanLayers();
+        return;
+      }
+      if (!this.isOnline) return;
       mapState.planDestSuggestTimeout = setTimeout(() => this.fetchPlanSuggestions(q, 'dest'), 350);
     },
 
     async fetchPlanSuggestions(q, which) {
+      if (!this.isOnline) return;
       try {
         let url = '/api/geocode/suggest?q=' + encodeURIComponent(q);
         if (mapState.map) { const c = mapState.map.getCenter(); url += `&lat=${c.lat}&lng=${c.lng}`; }
@@ -1466,39 +1585,59 @@ function app() {
     async planOriginFromText() {
       const q = this.planOrigin.trim();
       if (!q) return;
+      const coord = this.parseCoordInput(q);
+      if (coord) { this.selectPlanOrigin({ ...coord, display_name: q }); return; }
+      if (!this.isOnline) { this.planError = 'Offline — enter coordinates as "lat, lng"'; return; }
       try {
         const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
         const d = await r.json();
         if (r.ok && !d.error) this.selectPlanOrigin(d);
-      } catch(e) {}
+        else this.planError = d.error || 'Address not found';
+      } catch(e) {
+        this.planError = 'Offline — enter coordinates as "lat, lng"';
+      }
     },
 
     async planDestFromText() {
       const q = this.planDest.trim();
       if (!q) return;
+      const coord = this.parseCoordInput(q);
+      if (coord) { this.selectPlanDest({ ...coord, display_name: q }); return; }
+      if (!this.isOnline) { this.planError = 'Offline — enter coordinates as "lat, lng"'; return; }
       try {
         const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
         const d = await r.json();
         if (r.ok && !d.error) this.selectPlanDest(d);
-      } catch(e) {}
+        else this.planError = d.error || 'Address not found';
+      } catch(e) {
+        this.planError = 'Offline — enter coordinates as "lat, lng"';
+      }
     },
 
     setPlanOriginFromCoord(lat, lng) {
       this.planOriginCoord = { lat, lng };
       this.planOrigin = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       this.planOriginSuggestions = [];
+      this.planRoutes = [];
       this.updatePlanMarkers();
+      this.updatePlanLayers();
     },
 
     setPlanDestFromCoord(lat, lng) {
       this.planDestCoord = { lat, lng };
       this.planDest = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       this.planDestSuggestions = [];
+      this.planRoutes = [];
       this.updatePlanMarkers();
+      this.updatePlanLayers();
     },
 
     async getPlanRoutes() {
       if (!this.planOriginCoord || !this.planDestCoord) return;
+      if (!this.isOnline) {
+        this.planError = 'Routing requires internet. Tip: plan routes while online, then go offline — saved routes play fine.';
+        return;
+      }
       this.planningRoutes = true;
       this.planError = '';
       this.planRoutes = [];
@@ -1516,7 +1655,7 @@ function app() {
         this.updatePlanLayers();
         this.fitPlanRoutes();
       } catch(e) {
-        this.planError = 'Network error';
+        this.planError = 'Routing requires internet. Tip: plan routes while online, then go offline — saved routes play fine.';
       } finally {
         this.planningRoutes = false;
       }
