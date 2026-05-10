@@ -124,6 +124,13 @@ def create_app(udid: Optional[str] = None) -> Flask:
     def index():
         return send_from_directory(app.static_folder, "index.html")
 
+    @app.route("/sw.js")
+    def service_worker():
+        response = send_from_directory(app.static_folder, "sw.js")
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.route("/api/status")
     def api_status():
         tunnel_state = _tunnel.state().name
