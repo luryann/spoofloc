@@ -17,6 +17,7 @@ from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 
 from . import config as cfg_mod
+from . import sleep as sleep_mod
 from .exceptions import LocationError
 
 _proc_lock = threading.Lock()
@@ -299,6 +300,7 @@ def set_location(lat: float, lng: float, udid: str) -> None:
         _holding = True
         _last_coords = (lat, lng, udid)
         _save_loc_state(lat, lng, udid)
+        sleep_mod.acquire()
 
         # Capture old proc and any orphaned PID from a previous CLI session
         # BEFORE _spawn() overwrites the PID file.
@@ -359,6 +361,7 @@ def clear_location(udid: str) -> None:
         _holding = False
         _last_coords = None
         _clear_loc_state()
+        sleep_mod.release()
         _kill_active()
 
     try:

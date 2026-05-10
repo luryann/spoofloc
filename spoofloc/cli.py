@@ -30,6 +30,7 @@ from .exceptions import (
 )
 from .geocode import CachedGeocoder
 from .location import RouteLocationSession, clear_location, set_location
+from . import sleep as sleep_mod
 from .motion import MotionPlayer
 from .route import RoutePlayer, load_gpx
 from .tunnel import TunnelManager, TunnelState
@@ -292,6 +293,7 @@ def location_set(
         set_location(lat, lng, device_udid)
         console.print("[green]✓ Location set.[/green]")
         console.print("[dim]Run 'spoofloc location clear' to restore real GPS.[/dim]")
+        console.print("[dim]☕ Sleep prevention active.[/dim]")
     except LocationError as e:
         console.print(f"[red]✗ {e}[/red]")
         sys.exit(1)
@@ -306,6 +308,7 @@ def location_clear(udid: Optional[str]):
     try:
         clear_location(device_udid)
         console.print("[green]✓ Location cleared. iPhone is using real GPS.[/green]")
+        console.print("[dim]Sleep prevention released.[/dim]")
     except LocationError as e:
         console.print(f"[red]✗ {e}[/red]")
         sys.exit(1)
@@ -623,7 +626,13 @@ def map_cmd(
     else:
         console.print("[green]✓ Device tunnel ready.[/green]")
 
-    run_server(host=host, port=port, udid=udid, open_browser=open_browser)
+    sleep_mod.acquire()
+    console.print("[dim]☕ Sleep prevention active while map server is running.[/dim]")
+    try:
+        run_server(host=host, port=port, udid=udid, open_browser=open_browser)
+    finally:
+        sleep_mod.release()
+        console.print("[dim]Sleep prevention released.[/dim]")
 
 
 # ---------------------------------------------------------------------------
