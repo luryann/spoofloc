@@ -692,8 +692,8 @@
               </div>
             </div>
             <button class="btn-ghost" style="margin-top:6px; font-size:11px; padding:4px 8px;"
-              :disabled="currentLat === null || currentLng === null"
-              @click="setPlanOriginFromCoord(currentLat, currentLng)">
+              :disabled="!('geolocation' in navigator)"
+              @click="setPlanOriginFromRealLocation()">
               ⊙ Use current location
             </button>
           </div>
@@ -746,9 +746,13 @@
               <input type="checkbox" id="holdDestCheck" x-model="holdAtDestination" />
               <label for="holdDestCheck" class="check-label">Stay at destination</label>
             </div>
-            <button class="btn-green btn-full" @click="startPlanRoute()" :disabled="routeRunning">
-              ▶ Start Route
-            </button>
+            <div x-show="!routeRunning">
+              <div class="msg msg-ok" x-show="routeCompleted" style="margin-bottom:8px;">Arrived! Take the same route back?</div>
+              <div class="btn-row">
+                <button class="btn-green" style="flex:1" @click="startPlanRoute()">▶ Start</button>
+                <button class="btn-ghost" style="flex:1" @click="startPlanRouteReturn()">↩ Return</button>
+              </div>
+            </div>
             <div class="btn-row mt6" x-show="routeRunning">
               <button class="btn-ghost" style="flex:1" @click="pauseRoute()"  x-show="!routePaused">⏸ Pause</button>
               <button class="btn-ghost" style="flex:1" @click="resumeRoute()" x-show="routePaused">▶ Resume</button>
@@ -998,6 +1002,8 @@ function app() {
     planningRoutes: false,
     planError: '',
     planRouteColors: ['#4d87f5', '#2ecfaa', '#f97316'],
+    routeCompleted: false,
+    _routeUserStopped: false,
 
     isOnline: navigator.onLine,
     cacheBytes: 0,
@@ -1009,6 +1015,15 @@ function app() {
       this.initServiceWorker();
       window.addEventListener('online',  () => { this.isOnline = true; });
       window.addEventListener('offline', () => { this.isOnline = false; });
+      this.$watch('routeRunning', (newVal, oldVal) => {
+        if (oldVal === true && newVal === false && !this._routeUserStopped && this.mode === 'plan' && this.planRoutes.length > 0) {
+          this.routeCompleted = true;
+        }
+        if (newVal === true) {
+          this.routeCompleted = false;
+          this._routeUserStopped = false;
+        }
+      });
     },
 
     initServiceWorker() {
@@ -1295,6 +1310,7 @@ function app() {
       this.routeError = '';
       this.planError = '';
       this.motionError = '';
+      if (m !== 'plan') this.routeCompleted = false;
       if (mapState.map) {
         const crosshair = (m === 'location' || m === 'plan' || m === 'motion');
         mapState.map.getCanvas().style.cursor = crosshair ? 'crosshair' : '';
@@ -1422,6 +1438,7 @@ function app() {
     async resumeRoute() { await fetch('/api/route/resume', { method: 'POST' }); this.routePaused = false; },
 
     async stopRoute() {
+      this._routeUserStopped = true;
       await fetch('/api/route/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1632,6 +1649,22 @@ function app() {
       this.updatePlanLayers();
     },
 
+    setPlanOriginFromRealLocation() {
+      if (!navigator.geolocation) { this.planError = 'Geolocation not available in this browser'; return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          if (this.isValidCoordinate(lat, lng)) {
+            this.setPlanOriginFromCoord(lat, lng);
+            if (mapState.map) mapState.map.flyTo({ center: [lng, lat], zoom: 13 });
+          }
+        },
+        () => { this.planError = 'Unable to get current location'; },
+        { timeout: 8000, maximumAge: 60000 },
+      );
+    },
+
     async getPlanRoutes() {
       if (!this.planOriginCoord || !this.planDestCoord) return;
       if (!this.isOnline) {
@@ -1641,6 +1674,7 @@ function app() {
       this.planningRoutes = true;
       this.planError = '';
       this.planRoutes = [];
+      this.routeCompleted = false;
       this.updatePlanLayers();
       try {
         const r = await fetch('/api/route/plan', {
@@ -1693,6 +1727,36 @@ function app() {
             hold_final: this.holdAtDestination,
             segment_speeds_mph: route.segment_speeds_mph,
           }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { this.routeError = d.error || 'Failed to start route'; return; }
+        this.routeRunning = true;
+        this.routePaused = false;
+      } catch(e) {
+        this.routeError = 'Network error';
+      }
+    },
+
+    async startPlanRouteReturn() {
+      if (!this.planRoutes.length) return;
+      const route = this.planRoutes[this.selectedRoute];
+      this.routeError = '';
+      this.routeCompleted = false;
+      try {
+        const reversedWaypoints = [...route.waypoints].reverse();
+        const body = {
+          waypoints: reversedWaypoints.map(([lat, lng]) => ({ lat, lng })),
+          speed_mph: 30,
+          loop: false,
+          hold_final: this.holdAtDestination,
+        };
+        if (route.segment_speeds_mph) {
+          body.segment_speeds_mph = [...route.segment_speeds_mph].reverse();
+        }
+        const r = await fetch('/api/route/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
         });
         const d = await r.json();
         if (!r.ok || d.error) { this.routeError = d.error || 'Failed to start route'; return; }

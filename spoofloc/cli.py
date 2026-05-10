@@ -293,7 +293,7 @@ def location_set(
         set_location(lat, lng, device_udid)
         console.print("[green]✓ Location set.[/green]")
         console.print("[dim]Run 'spoofloc location clear' to restore real GPS.[/dim]")
-        console.print("[dim]☕ Sleep prevention active.[/dim]")
+        console.print("[dim]Sleep prevention active.[/dim]")
     except LocationError as e:
         console.print(f"[red]✗ {e}[/red]")
         sys.exit(1)
@@ -620,14 +620,14 @@ def map_cmd(
     console.print(f"[bold]spoofloc map UI[/bold]  http://{host}:{port}")
     state = _tunnel.state()
     if state == TunnelState.DOWN:
-        console.print("[yellow]⚠ tunneld is not running. Start it with: spoofloc tunnel start[/yellow]")
+        console.print("[yellow] tunneld is not running. Start it with: spoofloc tunnel start[/yellow]")
     elif state == TunnelState.UP_NO_DEVICE:
-        console.print("[yellow]⚠ tunneld running but no device found.[/yellow]")
+        console.print("[yellow]tunneld running but no device found.[/yellow]")
     else:
-        console.print("[green]✓ Device tunnel ready.[/green]")
+        console.print("[green]Device tunnel ready.[/green]")
 
     sleep_mod.acquire()
-    console.print("[dim]☕ Sleep prevention active while map server is running.[/dim]")
+    console.print("[dim]Sleep prevention active while map server is running.[/dim]")
     try:
         run_server(host=host, port=port, udid=udid, open_browser=open_browser)
     finally:
