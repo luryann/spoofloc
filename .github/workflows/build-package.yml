@@ -1,0 +1,35 @@
+name: Build Spoofloc Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "spoofloc/**"
+      - "pyproject.toml"
+      - "packaging/**"
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build package
+        run: bash packaging/make-dmg.sh
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spoofloc-dmg
+          path: dist/Spoofloc.dmg
+          retention-days: 30
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spoofloc-zip
+          path: dist/Spoofloc.zip
+          retention-days: 30
