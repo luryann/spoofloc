@@ -9,6 +9,9 @@ on:
       - "pyproject.toml"
       - "packaging/**"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest
@@ -20,16 +23,32 @@ jobs:
       - name: Build package
         run: bash packaging/make-dmg.sh
 
-      - name: Upload DMG
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: Spoofloc-dmg
           path: dist/Spoofloc.dmg
           retention-days: 30
 
-      - name: Upload zip
+      - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: Spoofloc-zip
           path: dist/Spoofloc.zip
           retention-days: 30
+
+      - name: Update latest tag
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Create or update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: Automated build from the main branch.
+          files: |
+            dist/Spoofloc.dmg
+            dist/Spoofloc.zip
+          make_latest: true
