@@ -73,6 +73,9 @@ class RoutePlayer:
     def is_running(self) -> bool:
         return self._running
 
+    def is_paused(self) -> bool:
+        return self._running and not self._pause_event.is_set()
+
     def get_progress(self) -> dict:
         return dict(self._state)
 

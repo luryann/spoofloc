@@ -43,6 +43,8 @@ _loop_thread: Optional[threading.Thread] = None
 _active_udid: Optional[str] = None
 _route_hold_final = True
 _route_stop_requested = False
+_route_session: dict = {}
+_motion_session: dict = {}
 
 
 def _parse_lat_lng(payload: dict, *, label: str = "Coordinates") -> tuple[float, float]:
@@ -142,9 +144,12 @@ def create_app(udid: Optional[str] = None) -> Flask:
             "lat": loc["lat"],
             "lng": loc["lng"],
             "route_running": _route_player.is_running(),
+            "route_paused": _route_player.is_paused(),
             "route_progress": _route_player.get_progress() if _route_player.is_running() else None,
+            "route_session": dict(_route_session) if _route_session else None,
             "motion_running": _motion_player.is_running(),
             "motion_state": _motion_player.get_state() if _motion_player.is_running() else None,
+            "motion_session": dict(_motion_session) if _motion_session else None,
         })
 
     @app.route("/api/devices")
@@ -219,7 +224,7 @@ def create_app(udid: Optional[str] = None) -> Flask:
             lat_a, lng_a = _resolve_location(body.get("origin"), "origin")
             lat_b, lng_b = _resolve_location(body.get("destination"), "destination")
         except GeocodeError as e:
-            return jsonify({"error": str(e)}), 503
+            return jsonify({"error": str(e)}), 400
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
@@ -232,7 +237,7 @@ def create_app(udid: Optional[str] = None) -> Flask:
 
     @app.route("/api/route/start", methods=["POST"])
     def api_route_start():
-        global _route_hold_final, _route_stop_requested
+        global _route_hold_final, _route_stop_requested, _route_session
 
         if not _playback_lock.acquire(blocking=False):
             return jsonify({"error": "A route or motion is already running. Stop it first."}), 409
@@ -261,9 +266,21 @@ def create_app(udid: Optional[str] = None) -> Flask:
                 except (TypeError, ValueError):
                     segment_speeds_mph = None
 
+            if segment_speeds_mph is not None and any(s <= 0 for s in segment_speeds_mph):
+                _playback_lock.release()
+                return jsonify({"error": "All segment speeds must be greater than 0 mph"}), 400
+
             if speed_mph <= 0 and segment_speeds_mph is None:
                 _playback_lock.release()
                 return jsonify({"error": "Route speed must be greater than 0 mph"}), 400
+
+            _route_session = {
+                "waypoints": [[lat, lng] for lat, lng in waypoints],
+                "speed_mph": speed_mph,
+                "loop": loop_flag,
+                "segment_speeds_mph": segment_speeds_mph,
+                "is_plan": segment_speeds_mph is not None,
+            }
 
             try:
                 device_udid, tunnel_address, tunnel_port = _tunnel.get_device_rsd(_active_udid)
@@ -318,6 +335,7 @@ def create_app(udid: Optional[str] = None) -> Flask:
                         _playback_lock.release()
                     except RuntimeError:
                         pass
+                    _route_session.clear()
                     _push_sse("status", {"route_running": False})
 
             asyncio.run_coroutine_threadsafe(
@@ -375,6 +393,7 @@ def create_app(udid: Optional[str] = None) -> Flask:
 
     @app.route("/api/motion/start", methods=["POST"])
     def api_motion_start():
+        global _motion_session
         if not _playback_lock.acquire(blocking=False):
             return jsonify({"error": "A route or motion is already running. Stop it first."}), 409
 
@@ -423,6 +442,13 @@ def create_app(udid: Optional[str] = None) -> Flask:
             if pattern in ("walk", "orbit") and radius_m <= 0:
                 _playback_lock.release()
                 return jsonify({"error": "radius_m must be > 0"}), 400
+
+            _motion_session = {"pattern": pattern, "speed_mph": speed_mph, "radius_m": radius_m, "jitter": jitter}
+            if pattern in ("walk", "orbit", "drift"):
+                _motion_session["center"] = {"lat": clat, "lng": clng}
+            else:
+                _motion_session["point_a"] = {"lat": lat1, "lng": lng1}
+                _motion_session["point_b"] = {"lat": lat2, "lng": lng2}
 
             try:
                 device_udid, tunnel_address, tunnel_port = _tunnel.get_device_rsd(_active_udid)
@@ -479,6 +505,7 @@ def create_app(udid: Optional[str] = None) -> Flask:
                         _playback_lock.release()
                     except RuntimeError:
                         pass
+                    _motion_session.clear()
                     _push_sse("status", {"motion_running": False})
 
             asyncio.run_coroutine_threadsafe(run_motion(), event_loop)

@@ -314,7 +314,20 @@
       letter-spacing: 0.03em;
       line-height: 1.5;
       border-left: 2px solid;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 6px;
     }
+    .msg-dismiss {
+      cursor: pointer;
+      flex-shrink: 0;
+      opacity: 0.5;
+      font-size: 11px;
+      line-height: 1.5;
+      transition: opacity .1s;
+    }
+    .msg-dismiss:hover { opacity: 1; }
     .msg-error { background: var(--red-soft); color: var(--red); border-color: var(--red); }
     .msg-ok    { background: var(--green-soft); color: var(--green); border-color: var(--green); }
 
@@ -571,7 +584,10 @@
                 </template>
               </div>
             </div>
-            <div class="msg msg-error" x-show="searchError" x-text="searchError"></div>
+            <div class="msg msg-error" x-show="searchError">
+              <span x-text="searchError"></span>
+              <span class="msg-dismiss" @click="searchError=''">✕</span>
+            </div>
           </div>
 
           <div class="section">
@@ -594,10 +610,19 @@
               <span x-show="settingLoc">Setting…</span>
             </button>
             <div class="mt6">
-              <button class="btn-ghost btn-full" @click="clearLocation()" :disabled="!spoofActive">Clear Spoof</button>
+              <button class="btn-ghost btn-full" @click="clearLocation()" :disabled="!spoofActive || clearingLoc">
+                <span x-show="!clearingLoc">Clear Spoof</span>
+                <span x-show="clearingLoc">Clearing…</span>
+              </button>
             </div>
-            <div class="msg msg-error" x-show="locError" x-text="locError"></div>
-            <div class="msg msg-ok"    x-show="locOk"    x-text="locOk"></div>
+            <div class="msg msg-error" x-show="locError">
+              <span x-text="locError"></span>
+              <span class="msg-dismiss" @click="locError=''">✕</span>
+            </div>
+            <div class="msg msg-ok" x-show="locOk">
+              <span x-text="locOk"></span>
+              <span class="msg-dismiss" @click="locOk=''">✕</span>
+            </div>
           </div>
 
           <div class="section">
@@ -626,6 +651,11 @@
             </div>
             <div class="mt8">
               <button class="btn-ghost btn-full" @click="clearWaypoints()" :disabled="waypoints.length===0">Clear All</button>
+            </div>
+            <div class="mt6">
+              <button class="btn-ghost btn-full" :disabled="currentLat === null" @click="addCurrentLocationWaypoint()">
+                ⊙ Add current location
+              </button>
             </div>
           </div>
 
@@ -661,7 +691,10 @@
               <button class="btn-ghost" style="flex:1" @click="resumeRoute()" x-show="routePaused">▶ Resume</button>
               <button class="btn-danger" style="flex:1" @click="stopRoute()">■ Stop</button>
             </div>
-            <div class="msg msg-error" x-show="routeError" x-text="routeError"></div>
+            <div class="msg msg-error" x-show="routeError">
+              <span x-text="routeError"></span>
+              <span class="msg-dismiss" @click="routeError=''">✕</span>
+            </div>
           </div>
 
           <div class="section">
@@ -724,7 +757,10 @@
               <span x-show="!planningRoutes">Get Routes</span>
               <span x-show="planningRoutes">Finding routes…</span>
             </button>
-            <div class="msg msg-error" x-show="planError" x-text="planError"></div>
+            <div class="msg msg-error" x-show="planError">
+              <span x-text="planError"></span>
+              <span class="msg-dismiss" @click="planError=''">✕</span>
+            </div>
           </div>
 
           <div class="section" x-show="planRoutes.length > 0">
@@ -747,10 +783,13 @@
               <label for="holdDestCheck" class="check-label">Stay at destination</label>
             </div>
             <div x-show="!routeRunning">
-              <div class="msg msg-ok" x-show="routeCompleted" style="margin-bottom:8px;">Arrived! Take the same route back?</div>
+              <div class="msg msg-ok" x-show="routeCompleted" style="margin-bottom:8px;">
+                <span>Arrived! Take the same route back?</span>
+                <span class="msg-dismiss" @click="routeCompleted=false">✕</span>
+              </div>
               <div class="btn-row">
                 <button class="btn-green" style="flex:1" @click="startPlanRoute()">▶ Start</button>
-                <button class="btn-ghost" style="flex:1" @click="startPlanRouteReturn()">↩ Return</button>
+                <button class="btn-ghost" style="flex:1" x-show="routeCompleted" @click="startPlanRouteReturn()">↩ Return</button>
               </div>
             </div>
             <div class="btn-row mt6" x-show="routeRunning">
@@ -758,13 +797,21 @@
               <button class="btn-ghost" style="flex:1" @click="resumeRoute()" x-show="routePaused">▶ Resume</button>
               <button class="btn-danger" style="flex:1" @click="stopRoute()">■ Stop</button>
             </div>
-            <div class="msg msg-error" x-show="routeError" x-text="routeError"></div>
+            <div class="msg msg-error" x-show="routeError">
+              <span x-text="routeError"></span>
+              <span class="msg-dismiss" @click="routeError=''">✕</span>
+            </div>
           </div>
 
           <div class="section" x-show="routeRunning">
             <div class="sec-label">Progress</div>
             <div class="progress-bar">
               <div class="progress-fill" :style="'width:' + routeProgressPct() + '%'"></div>
+            </div>
+            <div class="progress-meta">
+              Segment <span x-text="(routeProgress.segment_index||0)+1"></span> /
+              <span x-text="Math.max(routeProgress.total_waypoints||0,1)-1"></span>
+              &nbsp;·&nbsp;<span x-text="(routeProgress.speed_mph?.toFixed(0) ?? '–') + ' mph'"></span>
             </div>
           </div>
 
@@ -782,13 +829,13 @@
             <div class="sec-label">Pattern</div>
             <div class="pattern-tabs">
               <button class="pattern-tab" :class="{active: motionPattern==='walk'}"
-                @click="motionPattern='walk'; motionError=''">Walk</button>
+                @click="setMotionPattern('walk')">Walk</button>
               <button class="pattern-tab" :class="{active: motionPattern==='orbit'}"
-                @click="motionPattern='orbit'; motionError=''">Orbit</button>
+                @click="setMotionPattern('orbit')">Orbit</button>
               <button class="pattern-tab" :class="{active: motionPattern==='oscillate'}"
-                @click="motionPattern='oscillate'; motionError=''">Oscillate</button>
+                @click="setMotionPattern('oscillate')">Oscillate</button>
               <button class="pattern-tab" :class="{active: motionPattern==='drift'}"
-                @click="motionPattern='drift'; motionError=''">Drift</button>
+                @click="setMotionPattern('drift')">Drift</button>
             </div>
             <div class="hint mt6" x-show="motionPattern==='walk'">Wander around a center point within a radius.</div>
             <div class="hint mt6" x-show="motionPattern==='orbit'">Circle a point at fixed radius and speed.</div>
@@ -812,6 +859,11 @@
                     x-model.number="motionCenterLng" />
                 </div>
               </div>
+              <button class="btn-ghost" style="margin-top:6px; font-size:11px; padding:4px 8px; width:100%;"
+                :disabled="currentLat === null"
+                @click="setMotionCenterFromCurrent()">
+                ⊙ Use current location
+              </button>
               <div class="hint mt6">Click the map to set center.</div>
             </div>
           </template>
@@ -900,7 +952,10 @@
             <div class="mt6" x-show="motionRunning">
               <button class="btn-danger btn-full" @click="stopMotion()">■ Stop</button>
             </div>
-            <div class="msg msg-error" x-show="motionError" x-text="motionError"></div>
+            <div class="msg msg-error" x-show="motionError">
+              <span x-text="motionError"></span>
+              <span class="msg-dismiss" @click="motionError=''">✕</span>
+            </div>
           </div>
         </div>
       </template>
@@ -946,6 +1001,8 @@ function app() {
     planDestSuggestTimeout: null,
     motionMarkerA: null,
     motionMarkerB: null,
+    motionMarkerCenter: null,
+    locOkTimer: null,
   };
 
   return {
@@ -982,6 +1039,7 @@ function app() {
     inputLat: null,
     inputLng: null,
     settingLoc: false,
+    clearingLoc: false,
     locError: '',
     locOk: '',
 
@@ -1008,15 +1066,22 @@ function app() {
     isOnline: navigator.onLine,
     cacheBytes: 0,
 
+    _routeIsPlan: false,
+    _routeSession: null,
+    _motionSession: null,
+    _pendingWaypoints: null,
+    _pendingPlanRoutes: null,
+
     async init() {
       this.connectSSE();
       await this.fetchStatus();
+      this.restoreSession();
       this.initMap();
       this.initServiceWorker();
       window.addEventListener('online',  () => { this.isOnline = true; });
       window.addEventListener('offline', () => { this.isOnline = false; });
       this.$watch('routeRunning', (newVal, oldVal) => {
-        if (oldVal === true && newVal === false && !this._routeUserStopped && this.mode === 'plan' && this.planRoutes.length > 0) {
+        if (oldVal === true && newVal === false && !this._routeUserStopped && this.mode === 'plan' && this.planRoutes.length > 0 && this._routeIsPlan) {
           this.routeCompleted = true;
         }
         if (newVal === true) {
@@ -1053,7 +1118,7 @@ function app() {
     },
 
     fmtCacheSize(bytes) {
-      if (!bytes) return '0 MB';
+      if (!bytes) return '0 KB';
       const mb = bytes / (1024 * 1024);
       return mb < 1 ? `${(bytes / 1024).toFixed(0)} KB` : `${mb.toFixed(1)} MB`;
     },
@@ -1092,10 +1157,21 @@ function app() {
             this.centerOnRealLocation();
           }
           this.initPlanLayers();
+          if (this._pendingWaypoints) {
+            for (const [lat, lng] of this._pendingWaypoints) this.addWaypoint(lat, lng);
+            this._pendingWaypoints = null;
+          }
+          if (this._pendingPlanRoutes) {
+            this.planRoutes = this._pendingPlanRoutes;
+            this._pendingPlanRoutes = null;
+            this.updatePlanLayers();
+          }
         });
 
         mapState.map.on('error', (e) => {
-          this.mapError = e.error?.message || 'Map tiles failed to load.';
+          if (!mapState.mapStyleLoaded) {
+            this.mapError = e.error?.message || 'Map tiles failed to load.';
+          }
         });
 
         mapState.map.on('click', (e) => {
@@ -1157,6 +1233,8 @@ function app() {
         } else {
           this.planOriginCoord = null;
           this.planOrigin = '';
+          this.planDestCoord = null;
+          this.planDest = '';
           this.planRoutes = [];
           this.planError = '';
           this.updatePlanLayers();
@@ -1312,8 +1390,7 @@ function app() {
       this.motionError = '';
       if (m !== 'plan') this.routeCompleted = false;
       if (mapState.map) {
-        const crosshair = (m === 'location' || m === 'plan' || m === 'motion');
-        mapState.map.getCanvas().style.cursor = crosshair ? 'crosshair' : '';
+        mapState.map.getCanvas().style.cursor = 'crosshair';
       }
       if (m === 'motion' && this.currentLat !== null && this.currentLng !== null) {
         if (this.motionCenterLat === null) this.motionCenterLat = parseFloat(this.currentLat.toFixed(6));
@@ -1381,10 +1458,11 @@ function app() {
         if (requestId === mapState.locationRequestId) {
           this.inputLat = parseFloat(lat.toFixed(6));
           this.inputLng = parseFloat(lng.toFixed(6));
+          clearTimeout(mapState.locOkTimer);
           this.locOk = `Set to ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          mapState.locOkTimer = setTimeout(() => { this.locOk = ''; }, 3000);
           this.updateLocationMarker(lat, lng);
         }
-        setTimeout(() => { this.locOk = ''; }, 3000);
         return true;
       } catch(e) {
         if (requestId === mapState.locationRequestId) this.locError = 'Network error';
@@ -1395,6 +1473,7 @@ function app() {
     },
 
     async clearLocation() {
+      this.clearingLoc = true;
       try {
         const r = await fetch('/api/location/clear', { method: 'POST' });
         const d = await r.json();
@@ -1409,12 +1488,15 @@ function app() {
         this.inputLng = null;
       } catch(e) {
         this.locError = 'Network error';
+      } finally {
+        this.clearingLoc = false;
       }
     },
 
     async startRoute() {
       if (this.waypoints.length < 2) return;
       this.routeError = '';
+      this._routeIsPlan = false;
       try {
         const r = await fetch('/api/route/start', {
           method: 'POST',
@@ -1439,13 +1521,22 @@ function app() {
 
     async stopRoute() {
       this._routeUserStopped = true;
-      await fetch('/api/route/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clear_location: false }),
-      });
-      this.routeRunning = false;
-      this.routePaused = false;
+      try {
+        const r = await fetch('/api/route/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clear_location: false }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          this.routeError = d.error || 'Failed to stop route';
+          return;
+        }
+        this.routeRunning = false;
+        this.routePaused = false;
+      } catch(e) {
+        this.routeError = 'Network error stopping route';
+      }
     },
 
     routeProgressPct() {
@@ -1472,7 +1563,7 @@ function app() {
         const idx = i;
         mapState.map.on('click', `plan-layer-${i}`, () => this.selectPlanRoute(idx));
         mapState.map.on('mouseenter', `plan-layer-${i}`, () => { mapState.map.getCanvas().style.cursor = 'pointer'; });
-        mapState.map.on('mouseleave', `plan-layer-${i}`, () => { mapState.map.getCanvas().style.cursor = this.mode === 'plan' ? 'crosshair' : ''; });
+        mapState.map.on('mouseleave', `plan-layer-${i}`, () => { mapState.map.getCanvas().style.cursor = 'crosshair'; });
       }
       mapState.planLayersReady = true;
     },
@@ -1650,7 +1741,7 @@ function app() {
     },
 
     setPlanOriginFromRealLocation() {
-      if (!navigator.geolocation) { this.planError = 'Geolocation not available in this browser'; return; }
+      if (!navigator.geolocation) { this.planError = 'Unable to get current location'; return; }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const lat = pos.coords.latitude;
@@ -1716,6 +1807,7 @@ function app() {
       if (!this.planRoutes.length) return;
       const route = this.planRoutes[this.selectedRoute];
       this.routeError = '';
+      this._routeIsPlan = true;
       try {
         const r = await fetch('/api/route/start', {
           method: 'POST',
@@ -1742,6 +1834,7 @@ function app() {
       const route = this.planRoutes[this.selectedRoute];
       this.routeError = '';
       this.routeCompleted = false;
+      this._routeIsPlan = true;
       try {
         const reversedWaypoints = [...route.waypoints].reverse();
         const body = {
@@ -1801,15 +1894,52 @@ function app() {
       if (d.lat !== undefined) this.currentLat = d.lat;
       if (d.lng !== undefined) this.currentLng = d.lng;
       if (typeof d.route_running === 'boolean') this.routeRunning = d.route_running;
+      if (typeof d.route_paused === 'boolean') this.routePaused = d.route_paused;
       if (d.route_progress) this.routeProgress = d.route_progress;
+      if (d.route_session !== undefined) this._routeSession = d.route_session;
       if (typeof d.motion_running === 'boolean') this.motionRunning = d.motion_running;
       if (d.motion_state) this.motionState = d.motion_state;
+      if (d.motion_session !== undefined) this._motionSession = d.motion_session;
       const lat = Number(this.currentLat);
       const lng = Number(this.currentLng);
       if (this.spoofActive && this.isValidCoordinate(lat, lng)) {
         this.inputLat = parseFloat(lat.toFixed(6));
         this.inputLng = parseFloat(lng.toFixed(6));
         if (mapState.map) this.updateLocationMarker(lat, lng);
+      }
+    },
+
+    restoreSession() {
+      if (this.routeRunning && this._routeSession?.waypoints?.length >= 2) {
+        const rs = this._routeSession;
+        if (rs.is_plan) {
+          this.mode = 'plan';
+          this._pendingPlanRoutes = [{ waypoints: rs.waypoints, segment_speeds_mph: rs.segment_speeds_mph }];
+        } else {
+          this.mode = 'route';
+          this.routeSpeed = rs.speed_mph || 30;
+          this.routeLoop = rs.loop || false;
+          this._pendingWaypoints = rs.waypoints;
+        }
+      } else if (this.motionRunning && this._motionSession?.pattern) {
+        const ms = this._motionSession;
+        this.mode = 'motion';
+        this.motionPattern = ms.pattern;
+        this.motionSpeed = ms.speed_mph ?? 3;
+        this.motionRadius = ms.radius_m ?? 200;
+        this.motionJitter = ms.jitter ?? 0.5;
+        if (ms.center) {
+          this.motionCenterLat = ms.center.lat;
+          this.motionCenterLng = ms.center.lng;
+        }
+        if (ms.point_a) {
+          this.motionPointALat = ms.point_a.lat;
+          this.motionPointALng = ms.point_a.lng;
+        }
+        if (ms.point_b) {
+          this.motionPointBLat = ms.point_b.lat;
+          this.motionPointBLng = ms.point_b.lng;
+        }
       }
     },
 
@@ -1863,6 +1993,7 @@ function app() {
       if (this.motionPattern !== 'oscillate') {
         this.motionCenterLat = parseFloat(lat.toFixed(6));
         this.motionCenterLng = parseFloat(lng.toFixed(6));
+        this.updateMotionCenterMarker();
       } else {
         const click = this._motionOscClick;
         if (click === 0 || click >= 2) {
@@ -1924,6 +2055,71 @@ function app() {
       return this.motionCenterLat !== null && this.motionCenterLng !== null;
     },
 
+    setMotionPattern(pattern) {
+      const wasOscillate = this.motionPattern === 'oscillate';
+      const nowOscillate = pattern === 'oscillate';
+      this.motionPattern = pattern;
+      this.motionError = '';
+
+      const maxSpeeds = { drift: 15, walk: 15, orbit: 80, oscillate: 80 };
+      const minSpeeds = { drift: 0.5, walk: 1, orbit: 1, oscillate: 1 };
+      const maxSpd = maxSpeeds[pattern] ?? 80;
+      const minSpd = minSpeeds[pattern] ?? 1;
+      if (this.motionSpeed > maxSpd) this.motionSpeed = maxSpd;
+      if (this.motionSpeed < minSpd) this.motionSpeed = minSpd;
+
+      if (wasOscillate && !nowOscillate) {
+        if (mapState.motionMarkerA) { mapState.motionMarkerA.remove(); mapState.motionMarkerA = null; }
+        if (mapState.motionMarkerB) { mapState.motionMarkerB.remove(); mapState.motionMarkerB = null; }
+        this.updateMotionCenterMarker();
+      } else if (!wasOscillate && nowOscillate) {
+        if (mapState.motionMarkerCenter) { mapState.motionMarkerCenter.remove(); mapState.motionMarkerCenter = null; }
+        this.updateMotionOscMarkers();
+      }
+    },
+
+    setMotionCenterFromCurrent() {
+      if (this.currentLat === null || this.currentLng === null) {
+        this.motionError = 'No current location set';
+        return;
+      }
+      this.motionCenterLat = parseFloat(this.currentLat.toFixed(6));
+      this.motionCenterLng = parseFloat(this.currentLng.toFixed(6));
+      this.updateMotionCenterMarker();
+      if (mapState.map) mapState.map.flyTo({ center: [this.motionCenterLng, this.motionCenterLat], zoom: 14 });
+    },
+
+    addCurrentLocationWaypoint() {
+      if (this.currentLat === null || this.currentLng === null) {
+        this.routeError = 'No current location set';
+        return;
+      }
+      if (!mapState.map) return;
+      this.addWaypoint(this.currentLat, this.currentLng);
+    },
+
+    updateMotionCenterMarker() {
+      if (!mapState.map) return;
+      const lat = this.motionCenterLat;
+      const lng = this.motionCenterLng;
+      if (lat !== null && lng !== null) {
+        const ll = [lng, lat];
+        if (!mapState.motionMarkerCenter) {
+          const el = document.createElement('div');
+          el.className = 'waypoint-marker';
+          el.style.cssText = 'background:#d4933a; border-color:#fff; color:#fff;';
+          el.textContent = '⊕';
+          mapState.motionMarkerCenter = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(ll).addTo(mapState.map);
+        } else {
+          mapState.motionMarkerCenter.setLngLat(ll);
+        }
+      } else if (mapState.motionMarkerCenter) {
+        mapState.motionMarkerCenter.remove();
+        mapState.motionMarkerCenter = null;
+      }
+    },
+
     async startMotion() {
       if (!this.canStartMotion() || this.motionRunning) return;
       this.motionError = '';
@@ -1953,8 +2149,17 @@ function app() {
     },
 
     async stopMotion() {
-      await fetch('/api/motion/stop', { method: 'POST' });
-      this.motionRunning = false;
+      try {
+        const r = await fetch('/api/motion/stop', { method: 'POST' });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          this.motionError = d.error || 'Failed to stop motion';
+          return;
+        }
+        this.motionRunning = false;
+      } catch(e) {
+        this.motionError = 'Network error stopping motion';
+      }
     },
   };
 }
