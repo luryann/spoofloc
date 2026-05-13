@@ -102,3 +102,22 @@ def pair_remote_device(name: Optional[str] = None) -> None:
     if name:
         cmd += ["--name", name]
     subprocess.run(cmd, check=True, timeout=120)
+
+
+def check_developer_mode_enabled(udid: Optional[str] = None) -> bool:
+    cmd = ["python3", "-m", "pymobiledevice3", "amfi", "developer-mode-status"]
+    if udid:
+        cmd += ["--udid", udid]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True)
+        output = (result.stdout + result.stderr).lower()
+        return "true" in output or "enabled" in output
+    except Exception:
+        return False
+
+
+def reveal_developer_mode(udid: Optional[str] = None) -> None:
+    cmd = ["python3", "-m", "pymobiledevice3", "amfi", "reveal-developer-mode"]
+    if udid:
+        cmd += ["--udid", udid]
+    subprocess.run(cmd, check=True, timeout=30, capture_output=True, text=True)

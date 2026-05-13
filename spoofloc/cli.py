@@ -13,6 +13,7 @@ from rich.table import Table
 from . import config as cfg_mod
 from . import location as location_mod
 from .device import (
+    check_developer_mode_enabled,
     device_name,
     device_udid,
     enable_wifi_connections,
@@ -20,6 +21,7 @@ from .device import (
     list_paired_devices,
     pair_remote_device,
     prefer_usb_device,
+    reveal_developer_mode,
 )
 from .exceptions import (
     DeviceNotFoundError,
@@ -89,14 +91,14 @@ def main():
 def setup():
     """One-time USB setup: pair device and enable WiFi connections."""
     console.print("[bold]spoofloc setup[/bold]\n")
-    console.print("Step 1: Connect your iPhone via USB cable.")
-    console.print("Step 2: On iPhone → Settings → Privacy & Security → Developer Mode → Enable.")
-    click.pause("        Press Enter when Developer Mode is enabled…")
+    console.print("Step 1: Connect your iPhone via USB cable and unlock it.")
+    click.pause("        Press Enter when your iPhone is connected and unlocked…")
 
     console.print("\nDetecting paired devices…")
     devices = list_paired_devices()
     if not devices:
         console.print("[red]No devices found. Ensure the iPhone is connected and trusted.[/red]")
+        console.print("[dim]If a 'Trust This Computer?' prompt appeared on your phone, tap Trust.[/dim]")
         sys.exit(1)
 
     device = prefer_usb_device(devices)
@@ -106,6 +108,29 @@ def setup():
         sys.exit(1)
     name = device_name(device)
     console.print(f"[green]Found:[/green] {name} ({udid[:8]}…)")
+
+    # Developer Mode
+    console.print("\nChecking Developer Mode…")
+    if check_developer_mode_enabled(udid):
+        console.print("[green]✓ Developer Mode is already enabled.[/green]")
+    else:
+        console.print("Sending Developer Mode reveal request to your iPhone…")
+        try:
+            reveal_developer_mode(udid)
+            console.print("[green]✓ Request sent.[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not send reveal request: {e}[/yellow]")
+
+        console.print("\n[bold]Step 2: Enable Developer Mode on your iPhone:[/bold]")
+        console.print("  Settings → Privacy & Security → Developer Mode → Enable")
+        console.print("  (If iOS asks you to restart your phone, restart it.)")
+        click.pause("        Press Enter once Developer Mode is on and your iPhone is reconnected…")
+
+        # Re-detect in case the device rebooted
+        devices = list_paired_devices()
+        if devices:
+            device = prefer_usb_device(devices)
+            udid = device_udid(device) or udid
 
     console.print("\nEnabling WiFi connections…")
     try:
